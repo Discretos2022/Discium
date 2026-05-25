@@ -1,7 +1,8 @@
 
+#[derive(Clone)]
 pub enum RawHandle {
 
-    Win32 { hwnd: isize, hinstance: isize, width: i32, height: i32 },
+    Win32 { hwnd: isize, hinstance: isize },
     // X11(),
     // Wayland(),
     // MacOS(),
