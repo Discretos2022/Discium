@@ -6,4 +6,5 @@ pub mod window;
 pub mod gameconfig;
 pub mod renderer;
 pub mod utils;
+pub mod input;
 

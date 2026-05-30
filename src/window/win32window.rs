@@ -7,15 +7,19 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 // use windows::Win32::UI::WindowsAndMessaging::{
 //     CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, IDC_ARROW, LoadCursorW, PostQuitMessage, RegisterClassW, WINDOW_EX_STYLE, WM_DESTROY, WNDCLASSW
 // };
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY;
 use windows::core::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+use crate::input::mouse_input::MouseButton;
 use crate::window::basewindow::BaseWindow;
+use crate::window::event_converter::{EventConverter};
 use crate::window::event_enum::WindowEvent;
 use crate::window::rawhandle::RawHandle;
 use crate::window::window_config::WindowConfig;
@@ -25,6 +29,7 @@ pub struct Win32Window {
 
     pub hwnd: HWND,
     pub hinstance: HINSTANCE,
+    cursor_position: POINT,
 
 }
 
@@ -75,6 +80,7 @@ impl BaseWindow for Win32Window {
             return Self { 
                 hwnd: hwnd, 
                 hinstance: hinstance,
+                cursor_position: POINT { x: 0, y: 0 },
             };
 
         }
@@ -89,14 +95,37 @@ impl BaseWindow for Win32Window {
             let mut msg = MSG::default();
             while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).into() {
 
-                if msg.message == WM_QUIT {
-                    event_list.push(WindowEvent::Exit);
+                let m: u32 = msg.message;
+                let w_param = (msg.wParam.0 & 0xFFFF) as u32;
+
+                match m {
+                    WM_QUIT         => event_list.push(WindowEvent::Exit),
+                    
+                    WM_KEYDOWN      => event_list.push(WindowEvent::KeyPressed { keycode: EventConverter::key_event_to_key_code(VIRTUAL_KEY(w_param as u16)) }),
+                    WM_KEYUP        => event_list.push(WindowEvent::KeyReleased { keycode: EventConverter::key_event_to_key_code(VIRTUAL_KEY(w_param as u16)) }),
+                    
+                    WM_RBUTTONDOWN  => event_list.push(WindowEvent::MousePressed { button: MouseButton::Right }),
+                    WM_RBUTTONUP    => event_list.push(WindowEvent::MouseReleased { button: MouseButton::Right }),
+                    WM_MBUTTONDOWN  => event_list.push(WindowEvent::MousePressed { button: MouseButton::Middle }),
+                    WM_MBUTTONUP    => event_list.push(WindowEvent::MouseReleased { button: MouseButton::Middle }),
+                    WM_LBUTTONDOWN  => event_list.push(WindowEvent::MousePressed { button: MouseButton::Left }),
+                    WM_LBUTTONUP    => event_list.push(WindowEvent::MouseReleased { button: MouseButton::Left }),
+
+                    _ => {},
                 }
 
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
         }
+
+        
+        unsafe {
+            let _ = GetCursorPos(&mut self.cursor_position);
+            let _ = ScreenToClient(self.hwnd, &mut self.cursor_position);
+        };
+        event_list.push(WindowEvent::MousePosition { position: (self.cursor_position.x, self.cursor_position.y) });
+
 
         let mut winproc_events = WINPROC_EVENTS.lock()
             .unwrap()

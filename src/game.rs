@@ -3,6 +3,8 @@ use std::time::{Duration, Instant};
 use crate::gameconfig::GameConfig;
 
 use crate::gamebase::GameBase;
+use crate::input::keyboard_input::KeyboardInput;
+use crate::input::mouse_input::MouseInput;
 use crate::renderer::renderer::Renderer;
 use crate::renderer::renderer_type::RendererType;
 use crate::window::event_enum::WindowEvent;
@@ -45,17 +47,13 @@ impl<T: GameBase> Game<T> {
         while running {
 
             window_events = win.pool_events();
+            KeyboardInput::swap_state();
+            MouseInput::swap_state();
 
             let current_time = Instant::now();
             let delta_time = current_time - lastTime;
             lastTime = current_time;
             accumulator += delta_time;
-            
-            while accumulator >= LOGIC_FRAME_TIME {
-                self.base.update();
-                accumulator -= LOGIC_FRAME_TIME;
-            }
-
 
             for e in window_events {
             
@@ -64,11 +62,23 @@ impl<T: GameBase> Game<T> {
                     WindowEvent::Exit => { running = false; break; },
                     WindowEvent::Minimized => { vulkan.pause(); },
                     WindowEvent::Restored => { vulkan.resume(); vulkan.recreate_swapchain(&win.get_raw_handle()); },
+
+                    WindowEvent::KeyPressed { keycode } => { KeyboardInput::update_pressed(keycode) },
+                    WindowEvent::KeyReleased { keycode } => { KeyboardInput::update_released(keycode) },
+                    
+                    WindowEvent::MousePressed { button } => MouseInput::update_pressed(button),
+                    WindowEvent::MouseReleased { button } => MouseInput::update_released(button),
+                    WindowEvent::MousePosition { position } => MouseInput::update_position(position),
                 }
 
             }
 
             if !running { break; }
+
+            while accumulator >= LOGIC_FRAME_TIME {
+                self.base.update();
+                accumulator -= LOGIC_FRAME_TIME;
+            }
 
 
             // let max: u32 = System::get_max_memory();
