@@ -17,6 +17,9 @@ impl System {
 
         #[cfg(target_os = "windows")]
         return Self::get_max_memory_win32();
+
+        #[cfg(not(any(target_os = "windows")))]
+        panic!("This Platform Has No Function To Get Max Memory !")
         
     }
 
@@ -26,7 +29,9 @@ impl System {
 
         #[cfg(target_os = "windows")]
         return Self::get_memory_win32();
-        
+
+        #[cfg(not(any(target_os = "windows")))]
+        panic!("This Platform Has No Function To Get Memory !")
     }
 
     #[cfg(target_os = "windows")]

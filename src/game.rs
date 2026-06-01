@@ -34,9 +34,9 @@ impl<T: GameBase> Game<T> {
     pub fn start(&mut self) {
         
         let mut win = Window::create(&self.game_config.window_config);
-        let mut vulkan = Renderer::create(RendererType::Vulkan, &win.get_raw_handle());
+        let mut vulkan = Renderer::create(RendererType::Vulkan, &win.get_raw_handle(), win.get_window_size());
 
-        let mut window_events: Vec<WindowEvent> = Vec::new(); 
+        let mut window_events: Vec<WindowEvent> = vec![];
 
         let LOGIC_FRAME_TIME = Duration::from_nanos(16_666_667);
         let mut lastTime = Instant::now();
@@ -58,10 +58,10 @@ impl<T: GameBase> Game<T> {
             for e in window_events {
             
                 match e {
-                    WindowEvent::Resize { width, height } => vulkan.recreate_swapchain(&win.get_raw_handle()),
+                    WindowEvent::Resize { width, height } => vulkan.update_surface_dimension((width, height)),
                     WindowEvent::Exit => { running = false; break; },
                     WindowEvent::Minimized => { vulkan.pause(); },
-                    WindowEvent::Restored => { vulkan.resume(); vulkan.recreate_swapchain(&win.get_raw_handle()); },
+                    WindowEvent::Restored => { vulkan.resume(); vulkan.update_surface_dimension(win.get_window_size()); },
 
                     WindowEvent::KeyPressed { keycode } => { KeyboardInput::update_pressed(keycode) },
                     WindowEvent::KeyReleased { keycode } => { KeyboardInput::update_released(keycode) },

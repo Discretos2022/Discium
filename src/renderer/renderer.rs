@@ -11,9 +11,9 @@ pub struct Renderer {
 
 impl Renderer {
 
-    pub fn create(renderer_type: RendererType, raw_handle: &RawHandle) -> Renderer {
+    pub fn create(renderer_type: RendererType, raw_handle: &RawHandle, surface_dimension: (u32, u32)) -> Renderer {
         return Self {
-            renderer_handle: RendererFactory::create(renderer_type, raw_handle),
+            renderer_handle: RendererFactory::create(renderer_type, raw_handle, surface_dimension),
         };
     }
 
@@ -29,9 +29,9 @@ impl Renderer {
         }
     }
 
-    pub fn recreate_swapchain(&mut self, raw_handle: &RawHandle) {
+    pub fn update_surface_dimension(&mut self, surface_dimension: (u32, u32)) {
         match &mut self.renderer_handle {
-            RendererEnum::Vulkan(vulkan_renderer) => vulkan_renderer.recreate_swapchain(raw_handle),
+            RendererEnum::Vulkan(vulkan_renderer) => vulkan_renderer.update_surface_dimension(surface_dimension),
         }
     }
 

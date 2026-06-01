@@ -1,5 +1,6 @@
 pub mod baserenderer;
 pub mod vulkanrenderer;
+pub mod vulkan_surface;
 pub mod vulkanvertex;
 pub mod vulkanuniformbufferobject;
 pub mod renderer_enum;

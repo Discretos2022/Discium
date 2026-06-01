@@ -1,11 +1,10 @@
 
-use std::{any::Any, collections::HashSet, ffi::CStr, os::raw::c_void, thread::current, time::Instant};
+use std::{collections::HashSet, ffi::CStr, time::Instant};
 
-use ash::vk::{self, CommandPool, ComponentMapping, Offset2D, PFN_vkEnumeratePhysicalDevices, PushConstantRange, Rect2D, Semaphore};
+use ash::vk;
 use glam::{Mat4, Vec3};
-use windows::Win32::{Foundation::{HWND, RECT}, UI::WindowsAndMessaging::GetClientRect};
 
-use crate::{renderer::{baserenderer::BaseRenderer, vulkanuniformbufferobject::VulkanUniformBufferObject, vulkanvertex::VulkanVertex}, window::rawhandle::RawHandle};
+use crate::{renderer::{baserenderer::BaseRenderer, vulkan_surface::VulkanSurface, vulkanuniformbufferobject::VulkanUniformBufferObject, vulkanvertex::VulkanVertex}, window::rawhandle::RawHandle};
 
 
 
@@ -60,7 +59,8 @@ pub struct VulkanRenderer {
     descriptor_sets: Vec<vk::DescriptorSet>,
 
 
-    image_available_semaphore: Vec<vk::Semaphore>,
+    // image_available_semaphore: Vec<vk::Semaphore>,
+    acquire_semaphores: Vec<vk::Semaphore>,
     render_finished_semaphore: Vec<vk::Semaphore>,
     in_flight_fence: Vec<vk::Fence>,
     images_in_flight: Vec<vk::Fence>,
@@ -91,14 +91,14 @@ impl QueueFamilyIndices {
 
 impl BaseRenderer for VulkanRenderer {
 
-    fn create(raw_handle: &RawHandle) -> Self {
+    fn create(raw_handle: &RawHandle, surface_dimension: (u32, u32)) -> Self {
         
         let entry = unsafe { ash::Entry::load().expect("Vulkan not available") };
-        let instance = Self::create_vk_instance(&entry);
+        let instance = Self::create_vk_instance(&entry, raw_handle);
         let (surface, surface_loader) = Self::create_vk_surface(&entry, &instance, raw_handle);
         let physical_device = Self::find_physical_device(&instance, &surface_loader, surface);
         let (device, graphics_queue, present_queue) = Self::create_logical_device(&instance, &surface_loader, surface, physical_device);
-        let (swapchain_loader, swapchain, swapchain_images, swapchain_format, swapchain_extent) = Self::create_swapchain(&instance, &surface_loader, &device, surface, physical_device, &raw_handle);
+        let (swapchain_loader, swapchain, swapchain_images, swapchain_format, swapchain_extent) = Self::create_swapchain(&instance, &surface_loader, &device, surface, physical_device, surface_dimension);
         let swapchain_image_views = Self::create_image_views(&device, &swapchain_images, swapchain_format);
         let render_pass = Self::create_render_pass(&device, swapchain_format);
         let descriptor_set_layout = Self::create_descriptor_set_layout(&device);
@@ -113,7 +113,13 @@ impl BaseRenderer for VulkanRenderer {
         let descriptor_sets = Self::create_descriptor_sets(&device, &swapchain_images, &uniform_buffers, descriptor_set_layout, descriptor_pool);
         
         let command_buffers = Self::create_command_buffers(&device, &swapchain_frame_buffers, command_pool, render_pass, swapchain_extent, pipeline_layout, graphics_pipeline, vertex_buffer, index_buffer, &descriptor_sets);
-        let (image_available_semaphore, render_finished_semaphore, in_flight_fence, images_in_flight) = Self::create_sync_objects(&device, &swapchain_images);
+        let (acquire_semaphores, render_finished_semaphore, in_flight_fence, images_in_flight) = Self::create_sync_objects(&device, &swapchain_images);
+
+
+        let properties = unsafe { instance.get_physical_device_properties(physical_device) };
+        let name = unsafe { std::ffi::CStr::from_ptr(properties.device_name.as_ptr()) };
+        println!("Selected GPU: {:?}", name);
+
 
         return Self {
             start_time: std::time::Instant::now(),
@@ -150,7 +156,8 @@ impl BaseRenderer for VulkanRenderer {
             uniform_buffers_memory,
             descriptor_sets,
 
-            image_available_semaphore,
+            // image_available_semaphore,
+            acquire_semaphores, 
             render_finished_semaphore,
             in_flight_fence,
             images_in_flight,
@@ -159,6 +166,10 @@ impl BaseRenderer for VulkanRenderer {
             is_paused: false,
         };
 
+    }
+
+    fn update_surface_dimension(&mut self, surface_dimension:(u32, u32)) {
+        self.recreate_swapchain(surface_dimension);
     }
 
     fn pause(&mut self) {
@@ -175,23 +186,28 @@ impl BaseRenderer for VulkanRenderer {
 /// Create
 impl VulkanRenderer {
 
-    fn create_vk_instance(entry: &ash::Entry) -> ash::Instance {
+    fn create_vk_instance(entry: &ash::Entry, raw_handle: &RawHandle) -> ash::Instance {
 
         let app_info = vk::ApplicationInfo::default()
             .application_name(c"VulkanApp")
             .api_version(vk::API_VERSION_1_3);
 
-        let extensions = [
-            ash::khr::surface::NAME.as_ptr(),
-            ash::khr::win32_surface::NAME.as_ptr(),
-        ];
+        let extensions = VulkanSurface::get_required_extensions(raw_handle);
 
         // #[cfg(debug_assertions)] -> Validation layers
+
+        // #[cfg(debug_assertions)]
+        let validation_layers = Self::VALIDATION_LAYERS;
+        
+        // #[cfg(not(debug_assertions))]
+        // let validation_layers = &[];
+        
+
 
         let create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_extension_names(&extensions)
-            .enabled_layer_names(&Self::VALIDATION_LAYERS);
+            .enabled_layer_names(validation_layers);
 
         let instance = unsafe {
             entry.create_instance(&create_info, None)
@@ -204,28 +220,7 @@ impl VulkanRenderer {
 
     fn create_vk_surface(entry: &ash::Entry, instance: &ash::Instance, raw_handle: &RawHandle) -> (ash::vk::SurfaceKHR, ash::khr::surface::Instance) {
 
-        let surface = match raw_handle {
-
-            RawHandle::Win32 { hwnd, hinstance } => {
-
-                let create_info = vk::Win32SurfaceCreateInfoKHR::default()
-                    .hwnd(*hwnd as isize)
-                    .hinstance(*hinstance as isize);
-
-                let loader = ash::khr::win32_surface::Instance::new(entry, instance);
-
-                unsafe { loader.create_win32_surface(&create_info, None).expect("Vulkan Win32 Surface Error") }
-                
-            }
-
-            // RawHandle::X11() => {},
-            // RawHandle::Wayland() => {},
-            // RawHandle::MacOS() => {},
-
-        };
-
-        let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
-
+        let (surface, surface_loader) = VulkanSurface::create_vk_surface(entry, instance, raw_handle);
         return (surface, surface_loader);
 
     }
@@ -285,7 +280,7 @@ impl VulkanRenderer {
     }
 
 
-    fn create_swapchain(instance: &ash::Instance, surface_loader: &ash::khr::surface::Instance, device: &ash::Device, surface: ash::vk::SurfaceKHR, physical_device: ash::vk::PhysicalDevice, raw_handle: &RawHandle)
+    fn create_swapchain(instance: &ash::Instance, surface_loader: &ash::khr::surface::Instance, device: &ash::Device, surface: ash::vk::SurfaceKHR, physical_device: ash::vk::PhysicalDevice, surface_dimension: (u32, u32))
         -> (ash::khr::swapchain::Device, ash::vk::SwapchainKHR, Vec<vk::Image>, vk::Format, vk::Extent2D)
     {
 
@@ -293,7 +288,7 @@ impl VulkanRenderer {
 
         let surface_format = Self::get_swap_surface_format(&swapchain_details.formats);
         let present_mode = Self::get_swap_present_mode(&swapchain_details.present_modes);
-        let extent = Self::get_swap_extend(&swapchain_details.capabilities, raw_handle);
+        let extent = Self::get_swap_extend(&swapchain_details.capabilities, surface_dimension);
 
         let mut image_count = swapchain_details.capabilities.min_image_count;
         if swapchain_details.capabilities.max_image_count > 0 && image_count > swapchain_details.capabilities.max_image_count {
@@ -815,7 +810,8 @@ impl VulkanRenderer {
 
     fn create_sync_objects(device: &ash::Device, swapchain_images: &Vec<vk::Image>) -> (Vec<vk::Semaphore>, Vec<vk::Semaphore>, Vec<vk::Fence>, Vec<vk::Fence>) {
 
-        let mut image_available_semaphore: Vec<vk::Semaphore> = Vec::new();
+        // let mut image_available_semaphore: Vec<vk::Semaphore> = Vec::new();
+        let mut acquire_semaphores: Vec<vk::Semaphore> = Vec::new();
         let mut render_finished_semaphore: Vec<vk::Semaphore> = Vec::new();
         let mut in_flight_fence: Vec<vk::Fence> = Vec::new();
         let images_in_flight = vec![vk::Fence::null(); swapchain_images.len()];
@@ -825,26 +821,34 @@ impl VulkanRenderer {
         let fence_info = vk::FenceCreateInfo::default()
             .flags(vk::FenceCreateFlags::SIGNALED);
 
-        for i in 0..Self::MAX_FRAMES_IN_FLIGHT {
+        for i in 0..swapchain_images.len() {
             
-            let semaphore_1 = unsafe { device.create_semaphore(&semaphore_info, None).expect("Semaphore Creation Failed !") };
+            // let semaphore_1 = unsafe { device.create_semaphore(&semaphore_info, None).expect("Semaphore Creation Failed !") };
             let semaphore_2 = unsafe { device.create_semaphore(&semaphore_info, None).expect("Semaphore Creation Failed !") };
-            let fence = unsafe { device.create_fence(&fence_info, None).expect("Fence Creation Failed !") };
-
-            image_available_semaphore.push(semaphore_1);
+            
+            // image_available_semaphore.push(semaphore_1);
             render_finished_semaphore.push(semaphore_2);
+            
+        }
+
+        for i in 0..Self::MAX_FRAMES_IN_FLIGHT {
+
+            let fence = unsafe { device.create_fence(&fence_info, None).expect("Fence Creation Failed !") };
             in_flight_fence.push(fence);
+
+            let semaphore = unsafe { device.create_semaphore(&semaphore_info, None).expect("Semaphore Creation Failed !") };
+            acquire_semaphores.push(semaphore);
 
         }
 
-        return (image_available_semaphore, render_finished_semaphore, in_flight_fence, images_in_flight);
+        return (acquire_semaphores, render_finished_semaphore, in_flight_fence, images_in_flight);
     }
 
-    pub fn recreate_swapchain(&mut self, raw_handle: &RawHandle) {
+    pub fn recreate_swapchain(&mut self, surface_dimension: (u32, u32)) {
 
         // println!("RECREATE SWAPCHAIN -------------------------------------------------------------------------------------");
 
-        let (width, height) = Self::get_window_size(raw_handle);
+        let (width, height) = surface_dimension;
         if width == 0 || height == 0 { self.recreation_needed = true; return; }
 
         unsafe { self.device.device_wait_idle().expect("Wait Idle Failed !") };
@@ -853,7 +857,7 @@ impl VulkanRenderer {
 
         self.destroy_swapchain();
 
-        let (swapchain_loader, swapchain, swapchain_images, swapchain_format, swapchain_extent) = Self::create_swapchain(&self.instance, &self.surface_loader, &self.device, self.surface, self.physical_device, raw_handle);
+        let (swapchain_loader, swapchain, swapchain_images, swapchain_format, swapchain_extent) = Self::create_swapchain(&self.instance, &self.surface_loader, &self.device, self.surface, self.physical_device, surface_dimension);
         self.swapchain_loader = swapchain_loader;
         self.swapchain = swapchain;
         self.swapchain_images = swapchain_images;
@@ -883,8 +887,9 @@ impl VulkanRenderer {
         let command_buffers = Self::create_command_buffers(&self.device, &self.swapchain_frame_buffers, self.command_pool, self.render_pass, self.swapchain_extent, self.pipeline_layout, self.graphics_pipeline, self.vertex_buffer, self.index_buffer, &self.descriptor_sets);
         self.command_buffers = command_buffers;
 
-        let (image_available_semaphore, render_finished_semaphore, in_flight_fence, images_in_flight) = Self::create_sync_objects(&self.device, &self.swapchain_images);
-        self.image_available_semaphore = image_available_semaphore;
+        let (acquire_semaphores, render_finished_semaphore, in_flight_fence, images_in_flight) = Self::create_sync_objects(&self.device, &self.swapchain_images);
+        // self.image_available_semaphore = image_available_semaphore;
+        self.acquire_semaphores = acquire_semaphores;
         self.render_finished_semaphore = render_finished_semaphore;
         self.in_flight_fence = in_flight_fence;
         self.images_in_flight = images_in_flight;
@@ -1007,13 +1012,13 @@ impl VulkanRenderer {
         return vk::PresentModeKHR::FIFO;
     }
 
-    fn get_swap_extend(capabilities: &ash::vk::SurfaceCapabilitiesKHR, raw_handle: &RawHandle) -> ash::vk::Extent2D {
+    fn get_swap_extend(capabilities: &ash::vk::SurfaceCapabilitiesKHR, surface_dimension: (u32, u32)) -> ash::vk::Extent2D {
 
         if capabilities.current_extent.width != u32::MAX {
             return capabilities.current_extent;
         }
 
-        let (width, height) = Self::get_window_size(raw_handle);
+        let (width, height) = surface_dimension;
 
         let actual_extend = vk::Extent2D::default()
             .width(width as u32)
@@ -1113,9 +1118,11 @@ impl VulkanRenderer {
 
         if self.is_paused { return; }
 
-        // unsafe { self.device.wait_for_fences(&[self.in_flight_fence[self.current_frame as usize]], true, u64::MAX).expect("Fence Waiting Failed !") };
+        unsafe { self.device.wait_for_fences(&[self.in_flight_fence[self.current_frame as usize]], true, u64::MAX).expect("Fence Waiting Failed !") };
 
-        let result = unsafe { self.swapchain_loader.acquire_next_image(self.swapchain, u64::MAX, self.image_available_semaphore[self.current_frame as usize], vk::Fence::null()) };
+        let acquire_semaphore = self.acquire_semaphores[self.current_frame as usize];
+
+        let result = unsafe { self.swapchain_loader.acquire_next_image(self.swapchain, u64::MAX, acquire_semaphore, vk::Fence::null()) };
 
         // if self.recreation_needed {
         //     self.recreation_needed = false;
@@ -1125,10 +1132,12 @@ impl VulkanRenderer {
 
         let image_index = match result {
             Ok((index, false)) => index,
-            Ok((_, true)) => { self.recreate_swapchain(&self.raw_handle.clone()); return; }
-            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => { self.recreate_swapchain(&self.raw_handle.clone()); return; },
+            Ok((_, true)) => { self.recreate_swapchain((self.swapchain_extent.width, self.swapchain_extent.height)); return; }
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => { self.recreate_swapchain((self.swapchain_extent.width, self.swapchain_extent.height)); return; },
             Err(_) => panic!("Next Image Failed !")
         };
+
+        self.re_create_command_buffer(image_index);
 
         if self.images_in_flight[image_index as usize] != vk::Fence::null() {
             unsafe { self.device.wait_for_fences(&[self.images_in_flight[image_index as usize]], true, u64::MAX).expect("Fence Waiting Failed !") };
@@ -1139,9 +1148,9 @@ impl VulkanRenderer {
         // Update Uniform Buffer
         self.update_uniform_buffer(image_index as usize);
         
-        let wait_semaphores = [self.image_available_semaphore[self.current_frame as usize]];
+        let wait_semaphores = [acquire_semaphore];
         let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        let signal_semaphores = [self.render_finished_semaphore[self.current_frame as usize]];
+        let signal_semaphores = [self.render_finished_semaphore[image_index as usize]];
         
         let command_buffers = [self.command_buffers[image_index as usize]];
         let submit_info = vk::SubmitInfo::default()
@@ -1166,9 +1175,9 @@ impl VulkanRenderer {
 
         match result {
             Ok(_) => {},
-            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => self.recreate_swapchain(&self.raw_handle.clone()),
-            Err(vk::Result::SUBOPTIMAL_KHR) => self.recreate_swapchain(&self.raw_handle.clone()),
-            Err(_) => panic!("Next Imasge Failed !")
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => self.recreate_swapchain((self.swapchain_extent.width, self.swapchain_extent.height)),
+            Err(vk::Result::SUBOPTIMAL_KHR) => self.recreate_swapchain((self.swapchain_extent.width, self.swapchain_extent.height)),
+            Err(_) => panic!("Next Image Failed !")
         };
 
         self.current_frame = (self.current_frame + 1) % Self::MAX_FRAMES_IN_FLIGHT;
@@ -1234,15 +1243,15 @@ impl VulkanRenderer {
 
         if self.is_paused { return; }
 
-        unsafe { self.device.wait_for_fences(&[self.in_flight_fence[self.current_frame as usize]], true, u64::MAX).expect("Fence Waiting Failed !") };
+        // unsafe { self.device.wait_for_fences(&[self.in_flight_fence[self.current_frame as usize]], true, u64::MAX).expect("Fence Waiting Failed !") };
 
-        self.re_create_command_buffer();
+        // self.re_create_command_buffer();
 
     }
 
-    fn re_create_command_buffer(&mut self) {
+    fn re_create_command_buffer(&mut self, image_index: u32) {
 
-        let buffer = self.command_buffers[self.current_frame as usize];
+        let buffer = self.command_buffers[image_index as usize];
 
         unsafe { 
             self.device.reset_command_buffer(
@@ -1262,7 +1271,7 @@ impl VulkanRenderer {
 
         let render_pass_begin_info = vk::RenderPassBeginInfo::default()
             .render_pass(self.render_pass)
-            .framebuffer(self.swapchain_frame_buffers[self.current_frame as usize])
+            .framebuffer(self.swapchain_frame_buffers[image_index as usize])
             .render_area(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: self.swapchain_extent })
             .clear_values(&clear_values);
 
@@ -1275,7 +1284,7 @@ impl VulkanRenderer {
 
         unsafe { self.device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, offsets) };
         unsafe { self.device.cmd_bind_index_buffer(buffer, self.index_buffer, 0, vk::IndexType::UINT16) };
-        unsafe { self.device.cmd_bind_descriptor_sets(buffer, vk::PipelineBindPoint::GRAPHICS, self.pipeline_layout, 0, &[self.descriptor_sets[self.current_frame as usize]], &[]); }
+        unsafe { self.device.cmd_bind_descriptor_sets(buffer, vk::PipelineBindPoint::GRAPHICS, self.pipeline_layout, 0, &[self.descriptor_sets[image_index as usize]], &[]); }
 
         unsafe { self.device.cmd_draw_indexed(buffer, Self::INDICES.len() as u32, 1, 0, 0, 0); }
 
@@ -1287,21 +1296,6 @@ impl VulkanRenderer {
 
     }
 
-    fn get_window_size(raw_handle: &RawHandle) -> (u32, u32) {
-
-        match raw_handle {
-            RawHandle::Win32 { hwnd, hinstance: _} => {
-                let mut rect: RECT = RECT::default();
-                let hwnd = HWND(*hwnd as *mut c_void);
-                unsafe { GetClientRect(hwnd, &mut rect).expect("Windows : Get Client Rect Failed !") };
-                return (
-                    (rect.right - rect.left) as u32,
-                    (rect.bottom - rect.top) as u32
-                );
-            },
-        }
-
-    }
 
 }
 
@@ -1315,8 +1309,12 @@ impl VulkanRenderer {
 
             for i in 0..Self::MAX_FRAMES_IN_FLIGHT as usize {
                 self.device.destroy_fence(self.in_flight_fence[i], None);
+                self.device.destroy_semaphore(self.acquire_semaphores[i], None);
+            }
+
+            for i in 0..self.swapchain_images.len() as usize {
                 self.device.destroy_semaphore(self.render_finished_semaphore[i], None);
-                self.device.destroy_semaphore(self.image_available_semaphore[i], None);
+                // self.device.destroy_semaphore(self.image_available_semaphore[i], None);
             }
 
             self.device.destroy_descriptor_pool(self.descriptor_pool, None);

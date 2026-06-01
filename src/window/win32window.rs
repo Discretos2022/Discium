@@ -1,30 +1,27 @@
 
-// use windows::{
-//     Win32::{Foundation::*, System::LibraryLoader::*, UI::WindowsAndMessaging::*, },
-//     core::*,
-// };
+#[cfg(target_os = "windows")]
+use {
 
-use std::collections::HashMap;
-use std::sync::Mutex;
+    std::collections::HashMap,
+    std::sync::Mutex,
 
-use windows::Win32::Graphics::Gdi::ScreenToClient;
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-// use windows::Win32::UI::WindowsAndMessaging::{
-//     CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, IDC_ARROW, LoadCursorW, PostQuitMessage, RegisterClassW, WINDOW_EX_STYLE, WM_DESTROY, WNDCLASSW
-// };
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY;
-use windows::core::*;
-use windows::Win32::UI::WindowsAndMessaging::*;
+    windows::Win32::Graphics::Gdi::ScreenToClient,
+    windows::Win32::System::LibraryLoader::GetModuleHandleW,
+    windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
+    windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY,
+    windows::core::*,
+    windows::Win32::UI::WindowsAndMessaging::*,
 
-use crate::input::mouse_input::MouseButton;
-use crate::window::basewindow::BaseWindow;
-use crate::window::event_converter::{EventConverter};
-use crate::window::event_enum::WindowEvent;
-use crate::window::rawhandle::RawHandle;
-use crate::window::window_config::WindowConfig;
+    crate::input::mouse_input::MouseButton,
+    crate::window::basewindow::BaseWindow,
+    crate::window::event_converter::{EventConverter},
+    crate::window::event_enum::WindowEvent,
+    crate::window::rawhandle::RawHandle,
+    crate::window::window_config::WindowConfig,
+};
 
 
+#[cfg(target_os = "windows")]
 pub struct Win32Window {
 
     pub hwnd: HWND,
@@ -33,8 +30,13 @@ pub struct Win32Window {
 
 }
 
+#[cfg(not(target_os = "windows"))]
+pub struct Win32Window;
+
+#[cfg(target_os = "windows")]
 static WINPROC_EVENTS: std::sync::LazyLock<Mutex<HashMap<isize, Vec<WindowEvent>>>> = std::sync::LazyLock::new(||Mutex::new(HashMap::new()));
 
+#[cfg(target_os = "windows")]
 impl BaseWindow for Win32Window {
 
     fn create(config: &WindowConfig) -> Self {
@@ -141,9 +143,21 @@ impl BaseWindow for Win32Window {
         return RawHandle::Win32 { hwnd: self.hwnd.0 as isize, hinstance: self.hinstance.0 as isize }
     }
 
+    fn get_window_size(&self) -> (u32, u32) {
+        
+        let mut rect: RECT = RECT::default();
+        unsafe { GetClientRect(self.hwnd, &mut rect).expect("Windows : Get Client Rect Failed !") };
+        return (
+            (rect.right - rect.left) as u32,
+            (rect.bottom - rect.top) as u32
+        );
+
+    }
+
 }
 
 
+#[cfg(target_os = "windows")]
 impl Win32Window {
 
     extern "system" fn wndproc(
