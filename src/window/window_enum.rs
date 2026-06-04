@@ -1,10 +1,10 @@
-use crate::window::{linuxwindow::LinuxWindow, win32window::Win32Window};
+// use crate::window::{linux::linux_window::LinuxWindow, win32window::Win32Window};
 
 
-pub enum WindowEnum {
+// pub enum WindowEnum {
 
-    Windows(Win32Window),
-    Linux(LinuxWindow),
-    // MacOS(),
+//     Windows(Win32Window),
+//     Linux(LinuxWindow),
+//     // MacOS(),
 
-}
+// }

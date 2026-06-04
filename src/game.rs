@@ -46,40 +46,41 @@ impl<T: GameBase> Game<T> {
 
         while running {
 
-            window_events = win.pool_events();
-            KeyboardInput::swap_state();
-            MouseInput::swap_state();
-
             let current_time = Instant::now();
             let delta_time = current_time - lastTime;
             lastTime = current_time;
             accumulator += delta_time;
 
-            for e in window_events {
-            
-                match e {
-                    WindowEvent::Resize { width, height } => vulkan.update_surface_dimension((width, height)),
-                    WindowEvent::Exit => { running = false; break; },
-                    WindowEvent::Minimized => { vulkan.pause(); },
-                    WindowEvent::Restored => { vulkan.resume(); vulkan.update_surface_dimension(win.get_window_size()); },
+            'logic_loop: while accumulator >= LOGIC_FRAME_TIME {
 
-                    WindowEvent::KeyPressed { keycode } => { KeyboardInput::update_pressed(keycode) },
-                    WindowEvent::KeyReleased { keycode } => { KeyboardInput::update_released(keycode) },
-                    
-                    WindowEvent::MousePressed { button } => MouseInput::update_pressed(button),
-                    WindowEvent::MouseReleased { button } => MouseInput::update_released(button),
-                    WindowEvent::MousePosition { position } => MouseInput::update_position(position),
+                window_events = win.pool_events();
+                KeyboardInput::swap_state();
+                MouseInput::swap_state();
+
+                for e in window_events {
+                
+                    match e {
+                        WindowEvent::Resize { width, height } => vulkan.update_surface_dimension((width, height)),
+                        WindowEvent::Exit => { running = false; break 'logic_loop; },
+                        WindowEvent::Minimized => { vulkan.pause(); },
+                        WindowEvent::Restored => { vulkan.resume(); vulkan.update_surface_dimension(win.get_window_size()); },
+
+                        WindowEvent::KeyPressed { keycode } => { KeyboardInput::update_pressed(keycode) },
+                        WindowEvent::KeyReleased { keycode } => { KeyboardInput::update_released(keycode) },
+                        
+                        WindowEvent::MousePressed { button } => MouseInput::update_pressed(button),
+                        WindowEvent::MouseReleased { button } => MouseInput::update_released(button),
+                        WindowEvent::MousePosition { position } => MouseInput::update_position(position),
+                    }
+
                 }
 
-            }
 
-            if !running { break; }
-
-            while accumulator >= LOGIC_FRAME_TIME {
                 self.base.update();
                 accumulator -= LOGIC_FRAME_TIME;
             }
 
+            if !running { break; }
 
             // let max: u32 = System::get_max_memory();
             // println!("MEMORY : {} Bytes", max);

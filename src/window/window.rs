@@ -1,9 +1,22 @@
-use crate::window::{basewindow::BaseWindow, event_enum::WindowEvent, rawhandle::RawHandle, window_config::WindowConfig, window_enum::WindowEnum, windowfactory::WindowFactory};
+#[cfg(target_os = "linux")]
+use crate::window::linux::linux_window::LinuxWindow;
+
+#[cfg(target_os = "windows")]
+use crate::window::win32window::Win32Window;
+
+use crate::window::{basewindow::BaseWindow, event_enum::WindowEvent, rawhandle::RawHandle, window_config::WindowConfig, windowfactory::WindowFactory};
 
 
 pub struct Window {
 
-    pub window_handle: WindowEnum,
+    #[cfg(target_os = "windows")]
+    window_handle: Win32Window,
+
+    #[cfg(target_os = "linux")]
+    window_handle: LinuxWindow,
+
+    #[cfg(target_os = "macos")]
+    window_handle: MacosWindow,
 
 }
 
@@ -18,41 +31,16 @@ impl Window {
 
     }
 
-
     pub fn get_raw_handle(&self) -> RawHandle {
-
-        match &self.window_handle {
-            #[cfg(target_os = "windows")]
-            WindowEnum::Windows(w) => w.get_raw_handle(),
-            #[cfg(target_os = "linux")]
-            WindowEnum::Linux(w) => w.get_raw_handle(),
-            _ => panic!("Platoform Was Not Supported !"),
-        }
-
+        return self.window_handle.get_raw_handle();
     }
 
     pub fn get_window_size(&self) -> (u32, u32) {
-
-        match &self.window_handle {
-            #[cfg(target_os = "windows")]
-            WindowEnum::Windows(w) => w.get_window_size(),
-            #[cfg(target_os = "linux")]
-            WindowEnum::Linux(w) => w.get_window_size(),
-            _ => panic!("Platoform Was Not Supported !"),
-        }
-
+        return self.window_handle.get_window_size();
     }
 
     pub fn pool_events(&mut self) -> Vec<WindowEvent> {
-
-        match &mut self.window_handle {
-            #[cfg(target_os = "windows")]
-            WindowEnum::Windows(w) => w.pool_events(),
-            #[cfg(target_os = "linux")]
-            WindowEnum::Linux(w) => w.pool_events(),
-            _ => panic!("Platoform Was Not Supported !"),
-        }
-
+        return self.window_handle.pool_events();
     }
     
 }

@@ -68,7 +68,7 @@ impl KeyboardInput {
 
     pub fn is_key_unclic(key_code: KeyCode) -> bool {
         let keyboard = KEYBOARD.lock().unwrap();
-        if !keyboard.state.contains(&key_code) && !keyboard.old_state.contains(&key_code) {
+        if !keyboard.state.contains(&key_code) && keyboard.old_state.contains(&key_code) {
             return true;
         }
         return false;
@@ -87,6 +87,6 @@ pub enum KeyCode {
     
     Q, W, E, R, T, Z, U, I, O, P, A, S, D, F, G, H, J, K, L, Y, X, C, V, B, N, M,
 
-    Unknow,
+    Unknown,
 
 }

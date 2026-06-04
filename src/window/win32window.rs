@@ -1,5 +1,4 @@
 
-#[cfg(target_os = "windows")]
 use {
 
     std::collections::HashMap,
@@ -21,7 +20,6 @@ use {
 };
 
 
-#[cfg(target_os = "windows")]
 pub struct Win32Window {
 
     pub hwnd: HWND,
@@ -30,13 +28,9 @@ pub struct Win32Window {
 
 }
 
-#[cfg(not(target_os = "windows"))]
-pub struct Win32Window;
 
-#[cfg(target_os = "windows")]
 static WINPROC_EVENTS: std::sync::LazyLock<Mutex<HashMap<isize, Vec<WindowEvent>>>> = std::sync::LazyLock::new(||Mutex::new(HashMap::new()));
 
-#[cfg(target_os = "windows")]
 impl BaseWindow for Win32Window {
 
     fn create(config: &WindowConfig) -> Self {
@@ -157,7 +151,6 @@ impl BaseWindow for Win32Window {
 }
 
 
-#[cfg(target_os = "windows")]
 impl Win32Window {
 
     extern "system" fn wndproc(

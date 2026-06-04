@@ -99,6 +99,6 @@ pub enum MouseButton {
 
     Right, Left, Middle,
 
-    Unknow,
+    Unknown,
 
 }

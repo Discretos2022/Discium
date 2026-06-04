@@ -26,3 +26,4 @@ windows = {
 wayland-backend = { version = "0.3.10", default-features = false, features = ["client_system"] }
 wayland-client = "0.31.10"
 wayland-protocols = { version = "0.32.8", features = ["staging", "client"] }
+xkbcommon = "0.7"
