@@ -3,10 +3,12 @@ use std::time::{Duration, Instant};
 use crate::gameconfig::GameConfig;
 
 use crate::gamebase::GameBase;
-use crate::input::keyboard_input::KeyboardInput;
+use crate::input::keyboard_input::{KeyCode, KeyboardInput};
 use crate::input::mouse_input::MouseInput;
 use crate::renderer::renderer::Renderer;
 use crate::renderer::renderer_type::RendererType;
+use crate::renderer::resource_handles::{IndexBufferHandle, VertexBufferHandle};
+use crate::renderer::resources::vertex_position_color::VertexPositionColor;
 use crate::window::event_enum::WindowEvent;
 use crate::window::window::Window;
 
@@ -43,6 +45,52 @@ impl<T: GameBase> Game<T> {
         let mut accumulator = Duration::from_millis(0);
         
         let mut running: bool = true;
+
+        let vertex_buffer1: VertexBufferHandle<VertexPositionColor> = vulkan.create_vertex_buffer(4);
+        let vertices: &[VertexPositionColor] = &[
+            VertexPositionColor { pos: [-0.5, -0.5], color: [1.0, 0.0, 0.0] },
+            VertexPositionColor { pos: [ 0.5, -0.5], color: [0.0, 1.0, 0.0] },
+            VertexPositionColor { pos: [ 0.5,  0.5], color: [0.0, 0.0, 1.0] },
+            VertexPositionColor { pos: [-0.5,  0.5], color: [1.0, 1.0, 1.0] },
+        ];
+        vulkan.set_vertex_buffer_data(vertex_buffer1, vertices);
+
+
+        let index_buffer1: IndexBufferHandle<u16> = vulkan.create_index_buffer(6);
+        let indices: &[u16] = &[0, 1, 2, 2, 3, 0];
+        vulkan.set_index_buffer_data(index_buffer1, indices);
+
+
+
+        let vertex_buffer2: VertexBufferHandle<VertexPositionColor> = vulkan.create_vertex_buffer(4);
+        let vertices: &[VertexPositionColor] = &[
+            VertexPositionColor { pos: [-0.5 + 1.0, -0.5 + 1.0], color: [1.0, 0.0, 0.0] },
+            VertexPositionColor { pos: [ 0.5 + 1.0, -0.5 + 1.0], color: [0.0, 1.0, 0.0] },
+            VertexPositionColor { pos: [ 0.5 + 1.0,  0.5 + 1.0], color: [0.0, 0.0, 1.0] },
+            VertexPositionColor { pos: [-0.5 + 1.0,  0.5 + 1.0], color: [1.0, 1.0, 1.0] },
+        ];
+        vulkan.set_vertex_buffer_data(vertex_buffer2, vertices);
+
+
+        let index_buffer2: IndexBufferHandle<u16> = vulkan.create_index_buffer(6);
+        let indices: &[u16] = &[0, 1, 2, 2, 3, 0];
+        vulkan.set_index_buffer_data(index_buffer2, indices);
+
+
+        let vertex_buffer3: VertexBufferHandle<VertexPositionColor> = vulkan.create_vertex_buffer(4);
+        let vertices: &[VertexPositionColor] = &[
+            VertexPositionColor { pos: [-0.5 - 1.0, -0.5 - 1.0], color: [1.0, 0.0, 0.0] },
+            VertexPositionColor { pos: [ 0.5 - 1.0, -0.5 - 1.0], color: [0.0, 1.0, 0.0] },
+            VertexPositionColor { pos: [ 0.5 - 1.0,  0.5 - 1.0], color: [0.0, 0.0, 1.0] },
+            VertexPositionColor { pos: [-0.5 - 1.0,  0.5 - 1.0], color: [1.0, 1.0, 1.0] },
+        ];
+        vulkan.set_vertex_buffer_data(vertex_buffer3, vertices);
+
+
+        let index_buffer3: IndexBufferHandle<u16> = vulkan.create_index_buffer(6);
+        let indices: &[u16] = &[0, 1, 2, 2, 3, 0];
+        vulkan.set_index_buffer_data(index_buffer3, indices);
+
 
         while running {
 
@@ -87,9 +135,24 @@ impl<T: GameBase> Game<T> {
 
             // let alpha = accumulator.as_secs_f32() / LOGIC_FRAME_TIME.as_secs_f32();
             // Draw();
+
+            // Test du cycle de dessin
             vulkan.begin_draw();
+
             vulkan.draw_image();
-            // vulkan.recreate_swapchain(&win.get_raw_handle());
+
+            vulkan.draw_indexed(vertex_buffer1, index_buffer1);
+
+            if KeyboardInput::is_key_down(KeyCode::Left) {
+                vulkan.draw_indexed(vertex_buffer2, index_buffer2);
+            }
+
+            if KeyboardInput::is_key_down(KeyCode::Right) {
+                vulkan.draw_indexed(vertex_buffer3, index_buffer3);
+            }
+
+            vulkan.end_draw();
+            //-------------------------------------------------------------------------------------------------
 
         }
 
