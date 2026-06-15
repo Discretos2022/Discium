@@ -10,4 +10,3 @@ pub mod renderer;
 pub mod renderer_type;
 pub mod renderer_factory;
 pub mod resource_handles;
-pub mod vertexbuffer;
