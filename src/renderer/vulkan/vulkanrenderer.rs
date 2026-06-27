@@ -1,10 +1,7 @@
-
-use std::{collections::HashSet, ffi::CStr, time::Instant};
+use std::{collections::HashSet, ffi::CStr};
 
 use ash;
 use ash::vk;
-
-use glam::{Mat4, Vec3};
 
 use crate::renderer::resource_handles::{ScissorHandle, ShaderLayoutHandle, UniformBufferHandle, ViewportHandle};
 use crate::renderer::resources::base_uniform::BaseUniform;
@@ -13,14 +10,11 @@ use crate::renderer::resources::scissor_config::ScissorConfig;
 use crate::renderer::vulkan::vulkan_descriptor_set_layout::VulkanDescriptorSetLayout;
 use crate::renderer::vulkan::vulkan_uniformbuffer::VulkanUniformBuffer;
 use crate::renderer::vulkan::vulkan_utils::VulkanUtils;
-use crate::{renderer::{baserenderer::BaseRenderer, resource_handles::{IndexBufferHandle, PipelineHandle, VertexBufferHandle}, resources::{base_index::BaseIndex, base_vertex::BaseVertex, pipeline_config::PipelineConfig, shader_type::ShaderType, vertex_declaration::VertexDeclaration, vertex_format::VertexFormat, vertex_position_color::VertexPositionColor, viewport_config::ViewportConfig}, vulkan::{vulkan_indexbuffer::VulkanIndexBuffer, vulkan_pipeline::VulkanPipeline, vulkan_shader::VulkanShader, vulkan_surface::VulkanSurface, vulkan_vertexbuffer::VulkanVertexBuffer}, vulkanuniformbufferobject::VulkanUniformBufferObject}, window::rawhandle::RawHandle};
-
-
+use crate::{renderer::{baserenderer::BaseRenderer, resource_handles::{IndexBufferHandle, PipelineHandle, VertexBufferHandle}, resources::{base_index::BaseIndex, base_vertex::BaseVertex, pipeline_config::PipelineConfig, shader_type::ShaderType, viewport_config::ViewportConfig}, vulkan::{vulkan_indexbuffer::VulkanIndexBuffer, vulkan_pipeline::VulkanPipeline, vulkan_shader::VulkanShader, vulkan_surface::VulkanSurface, vulkan_vertexbuffer::VulkanVertexBuffer}}, window::rawhandle::RawHandle};
 
 
 pub struct VulkanRenderer {
 
-    start_time: Instant,
     raw_handle: RawHandle,
     recreation_needed: bool,
 
@@ -45,10 +39,6 @@ pub struct VulkanRenderer {
     swapchain_image_views: Vec<vk::ImageView>,
 
     render_pass: vk::RenderPass,
-    
-    // descriptor_set_layout: vk::DescriptorSetLayout,
-    // pipeline_layout: vk::PipelineLayout,
-    // graphics_pipeline: vk::Pipeline,
 
     descriptor_set_layouts: Vec<VulkanDescriptorSetLayout>,
     pipelines: Vec<VulkanPipeline>,
@@ -61,11 +51,6 @@ pub struct VulkanRenderer {
     command_buffers: Vec<vk::CommandBuffer>,
     vertex_buffers: Vec<VulkanVertexBuffer>,
     index_buffers: Vec<VulkanIndexBuffer>,
-
-    // uniform_buffers: Vec<vk::Buffer>,
-    // uniform_buffers_memory: Vec<vk::DeviceMemory>,
-    // descriptor_sets: Vec<vk::DescriptorSet>,
-
     uniform_buffers: Vec<VulkanUniformBuffer>,
 
     shaders: Vec<VulkanShader>,
@@ -133,16 +118,11 @@ impl BaseRenderer for VulkanRenderer {
         let (swapchain_loader, swapchain, swapchain_images, swapchain_format, swapchain_extent) = Self::create_swapchain(&instance, &surface_loader, &device, surface, physical_device, surface_dimension);
         let swapchain_image_views = Self::create_image_views(&device, &swapchain_images, swapchain_format);
         let render_pass = Self::create_render_pass(&device, swapchain_format);
-        // let descriptor_set_layout = Self::create_descriptor_set_layout(&device);
-        // let (pipeline_layout, graphics_pipeline) = Self::create_graphics_pipeline(&device, swapchain_extent, descriptor_set_layout, render_pass);
         let swapchain_frame_buffers = Self::create_frame_buffers(&device, &swapchain_image_views, render_pass, swapchain_extent);
         let command_pool = Self::create_command_pool(&instance, &device, &surface_loader, surface, physical_device);
         let descriptor_pool = Self::create_descriptor_pool(&device, &swapchain_images);
         
-        // let (uniform_buffers, uniform_buffers_memory) = Self::create_uniform_buffer(&instance, &device, physical_device, &swapchain_images);
-        // let descriptor_sets = Self::create_descriptor_sets(&device, &swapchain_images, &uniform_buffers, descriptor_set_layout, descriptor_pool);
-        
-        let command_buffers = Self::create_command_buffers(&device, &swapchain_frame_buffers, command_pool /*, render_pass, swapchain_extent, pipeline_layout, graphics_pipeline*/ /*, vertex_buffer, index_buffer, &descriptor_sets*/);
+        let command_buffers = Self::create_command_buffers(&device, &swapchain_frame_buffers, command_pool);
         let (acquire_semaphores, render_finished_semaphore, in_flight_fence, images_in_flight) = Self::create_sync_objects(&device, &swapchain_images);
 
 
@@ -152,7 +132,6 @@ impl BaseRenderer for VulkanRenderer {
 
 
         return Self {
-            start_time: std::time::Instant::now(),
             raw_handle: raw_handle.clone(),
             recreation_needed: false,
             entry,
@@ -170,10 +149,7 @@ impl BaseRenderer for VulkanRenderer {
             swapchain_extent,
             swapchain_image_views,
             render_pass,
-            // descriptor_set_layout,
-            // pipeline_layout,
 
-            // graphics_pipeline,
             descriptor_set_layouts: Vec::new(),
             pipelines: Vec::new(),
 
@@ -184,10 +160,6 @@ impl BaseRenderer for VulkanRenderer {
             command_buffers,
             vertex_buffers: Vec::new(),
             index_buffers: Vec::new(),
-
-            // uniform_buffers,
-            // uniform_buffers_memory,
-            // descriptor_sets,
             uniform_buffers: Vec::new(),
 
             shaders: Vec::new(),
@@ -475,178 +447,6 @@ impl VulkanRenderer {
     }
 
 
-    // fn create_descriptor_set_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
-
-    //     let ubo_layout_binding = [vk::DescriptorSetLayoutBinding::default()
-    //         .binding(0)
-    //         .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-    //         .descriptor_count(1)
-    //         .stage_flags(vk::ShaderStageFlags::VERTEX)
-    //         //.immutable_samplers();
-    //     ];
-
-    //     let layout_info = vk::DescriptorSetLayoutCreateInfo::default()
-    //         .bindings(&ubo_layout_binding);
-
-    //     let descriptor_set_layout = unsafe { device.create_descriptor_set_layout(&layout_info, None).expect("Descriptor Layout Creation Failed !") };
-
-    //     return descriptor_set_layout;
-    // }
-
-
-    fn create_graphics_pipeline(device: &ash::Device, swapchain_extent: vk::Extent2D, descriptor_set_layout: vk::DescriptorSetLayout, render_pass: vk::RenderPass) -> (vk::PipelineLayout, vk::Pipeline) {
-
-        // let vert_shader_code = std::fs::read("shaders/vert.spv").expect("Opening Of 'vert.spv' Was Failed !");
-        // let frag_shader_code = std::fs::read("shaders/frag.spv").expect("Opening Of 'frag.spv' Was Failed !");
-
-        let vert_code = include_bytes!(".././shaders/bin/vert.spv");
-        let frag_code = include_bytes!(".././shaders/bin/frag.spv");
-
-        let vert_code = ash::util::read_spv(&mut std::io::Cursor::new(vert_code.as_ref())).unwrap();
-        let vert_info = vk::ShaderModuleCreateInfo::default()
-            .code(vert_code.as_slice());
-
-        let frag_code = ash::util::read_spv(&mut std::io::Cursor::new(frag_code.as_ref())).unwrap();
-        let frag_info = vk::ShaderModuleCreateInfo::default()
-            .code(frag_code.as_slice());
-
-        let vert_shader_module = unsafe { device.create_shader_module(&vert_info, None).expect("Vertex Shader Module Creation Failed !") };
-        let frag_shader_module = unsafe { device.create_shader_module(&frag_info, None).expect("Fragment Shader Module Creation Failed !") };
-
-
-        let vert_shader_stage_info = vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::VERTEX)
-            .module(vert_shader_module)
-            .name(c"main");
-
-        let frag_shader_stage_info = vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::FRAGMENT)
-            .module(frag_shader_module)
-            .name(c"main");
-
-
-        let shader_stages = [vert_shader_stage_info, frag_shader_stage_info ];
-
-        let binding_description = [VulkanUtils::get_vertex_binding_descriptions(&VertexPositionColor::get_vertex_declaration())];
-        let attribute_descriptions = VulkanUtils::get_vertex_attribute_descriptions(&VertexPositionColor::get_vertex_declaration());
-
-
-        let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default()
-            .vertex_binding_descriptions(&binding_description)
-            .vertex_attribute_descriptions(&attribute_descriptions);
-
-        let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
-            .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-            .primitive_restart_enable(false);
-
-        let viewports = [vk::Viewport::default()
-            .x(0.0)
-            .y(0.0)
-            .width(swapchain_extent.width as f32)
-            .height(swapchain_extent.height as f32)
-            .min_depth(0.0)
-            .max_depth(1.0)
-        ];
-
-        let scissors = [vk::Rect2D::default()
-            .offset(vk::Offset2D { x: 0, y: 0 })
-            .extent(swapchain_extent)
-        ];
-
-        let viewport_state = vk::PipelineViewportStateCreateInfo::default()
-            .viewports(&viewports)
-            .scissors(&scissors);
-
-        let rasteriser = vk::PipelineRasterizationStateCreateInfo::default()
-            .depth_clamp_enable(false)
-            .rasterizer_discard_enable(false)
-            .polygon_mode(vk::PolygonMode::FILL)
-            .line_width(1.0)
-            .cull_mode(vk::CullModeFlags::NONE)
-            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
-            .depth_bias_enable(false)
-            .depth_bias_constant_factor(0.0)
-            .depth_bias_clamp(0.0)
-            .depth_bias_slope_factor(0.0);
-
-        let multisampler = vk::PipelineMultisampleStateCreateInfo::default()
-            .sample_shading_enable(false)
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1)
-            .min_sample_shading(1.0)
-            //.sample_mask()
-            .alpha_to_coverage_enable(false)
-            .alpha_to_one_enable(false);
-
-        let color_blend_attachment = [
-            vk::PipelineColorBlendAttachmentState::default()
-                .color_write_mask(vk::ColorComponentFlags::R | vk::ColorComponentFlags::G | vk::ColorComponentFlags::B | vk::ColorComponentFlags::A)
-        
-                // .blend_enable(false)
-                // .src_color_blend_factor(vk::BlendFactor::ONE)
-                // .dst_color_blend_factor(vk::BlendFactor::ZERO)
-                // .color_blend_op(vk::BlendOp::ADD)
-                // .src_alpha_blend_factor(vk::BlendFactor::ONE)
-                // .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-                // .alpha_blend_op(vk::BlendOp::ADD)
-                
-                .blend_enable(true)
-                .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
-                .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-                .color_blend_op(vk::BlendOp::ADD)
-                .src_alpha_blend_factor(vk::BlendFactor::ONE)
-                .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-                .alpha_blend_op(vk::BlendOp::ADD)
-        ];
-
-        let color_blending = vk::PipelineColorBlendStateCreateInfo::default()
-            .logic_op_enable(false)
-            .logic_op(vk::LogicOp::COPY)
-            .attachments(&color_blend_attachment)
-            .blend_constants([0.0, 0.0, 0.0, 0.0]);
-
-        let dynamic_states= [
-            vk::DynamicState::VIEWPORT,
-            vk::DynamicState::LINE_WIDTH,
-            vk::DynamicState::BLEND_CONSTANTS
-        ];
-
-        let dynamic_state_info = vk::PipelineDynamicStateCreateInfo::default()
-            .dynamic_states(&dynamic_states);
-
-        let binding = [descriptor_set_layout];
-        let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default()
-            .set_layouts(&binding);
-            // .push_constant_ranges()
-
-        let pipeline_layout = unsafe { device.create_pipeline_layout(&pipeline_layout_info, None).expect("Pipeline Layout Creation Failed !") };
-
-        let pipeline_info = vk::GraphicsPipelineCreateInfo::default()
-            .stages(&shader_stages)
-            .vertex_input_state(&vertex_input_info)
-            .input_assembly_state(&input_assembly)
-            .viewport_state(&viewport_state)
-            .rasterization_state(&rasteriser)
-            .multisample_state(&multisampler)
-            // .depth_stencil_state()
-            .color_blend_state(&color_blending)
-            // .dynamic_state()
-            .layout(pipeline_layout)
-            .render_pass(render_pass)
-            .subpass(0);
-            // .base_pipeline_handle()
-            // .base_pipeline_index();
-
-        let graphics_pipeline = unsafe { device.create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None).expect("Graphics Pipeline Creation Failed !") };
-
-        unsafe { 
-            device.destroy_shader_module(vert_shader_module, None);
-            device.destroy_shader_module(frag_shader_module, None);
-        };
-
-        return (pipeline_layout, graphics_pipeline[0]);
-    }
-
-
     fn create_frame_buffers(device: &ash::Device, swapchain_image_views: &Vec<vk::ImageView>, render_pass: vk::RenderPass, swapchain_extent: vk::Extent2D) -> Vec<vk::Framebuffer> {
 
         let mut swapchain_frame_buffers: Vec<vk::Framebuffer> = Vec::new();
@@ -705,7 +505,7 @@ impl VulkanRenderer {
     }
 
 
-    fn create_command_buffers(device: &ash::Device, swapchain_frame_buffers: &Vec<vk::Framebuffer>, command_pool: vk::CommandPool   /*, render_pass: vk::RenderPass, swapchain_extent: vk::Extent2D, pipeline_layout: vk::PipelineLayout, graphics_pipeline: vk::Pipeline,*/ /*vertex_buffer: vk::Buffer, index_buffer: vk::Buffer, descriptor_sets: &Vec<vk::DescriptorSet>*/) -> Vec<vk::CommandBuffer> {
+    fn create_command_buffers(device: &ash::Device, swapchain_frame_buffers: &Vec<vk::Framebuffer>, command_pool: vk::CommandPool) -> Vec<vk::CommandBuffer> {
 
         let command_buffer_allocate_info = vk::CommandBufferAllocateInfo::default()
             .command_pool(command_pool)
@@ -718,25 +518,7 @@ impl VulkanRenderer {
     }
 
 
-    // fn create_uniform_buffer(instance: &ash::Instance, device: &ash::Device, physical_device: ash::vk::PhysicalDevice, swapchain_images: &Vec<vk::Image>) -> (Vec<vk::Buffer>, Vec<vk::DeviceMemory>) {
-
-    //     let buffer_size = std::mem::size_of::<VulkanUniformBufferObject>() as u64;
-
-    //     let mut uniform_buffers = Vec::<vk::Buffer>::new();
-    //     let mut uniform_buffers_memory = Vec::<vk::DeviceMemory>::new();
-
-    //     for i in 0..swapchain_images.len() {
-            
-    //         let (buffer, buffer_memory) = Self::create_buffer(instance, device, physical_device, buffer_size, vk::BufferUsageFlags::UNIFORM_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT);
-
-    //         uniform_buffers.push(buffer);
-    //         uniform_buffers_memory.push(buffer_memory);
-    //     }
-
-    //     return (uniform_buffers, uniform_buffers_memory);
-    // }
-
-    fn create_descriptor_sets(device: &ash::Device, swapchain_images: &Vec<vk::Image>, uniform_buffers: &Vec<vk::Buffer>, descriptor_set_layout: &Vec<vk::DescriptorSetLayout>, descriptor_pool: vk::DescriptorPool) -> Vec<vk::DescriptorSet> {
+    fn create_descriptor_sets(device: &ash::Device, swapchain_images: &Vec<vk::Image>, uniform_buffers: &Vec<vk::Buffer>, size: u64, descriptor_set_layout: &Vec<vk::DescriptorSetLayout>, descriptor_pool: vk::DescriptorPool) -> Vec<vk::DescriptorSet> {
 
         // On prend le descriptor_set_layout [0] pour le moment
         let layouts = vec![descriptor_set_layout[0]; swapchain_images.len()];
@@ -753,7 +535,7 @@ impl VulkanRenderer {
                 vk::DescriptorBufferInfo::default()
                     .buffer(uniform_buffers[i])
                     .offset(0)
-                    .range(std::mem::size_of::<VulkanUniformBufferObject>() as u64)
+                    .range(size)
             ];
 
             let descriptor_write = [
@@ -786,14 +568,14 @@ impl VulkanRenderer {
         let fence_info = vk::FenceCreateInfo::default()
             .flags(vk::FenceCreateFlags::SIGNALED);
 
-        for i in 0..swapchain_images.len() {
+        for _ in 0..swapchain_images.len() {
             
             let semaphore = unsafe { device.create_semaphore(&semaphore_info, None).expect("Semaphore Creation Failed !") };
             render_finished_semaphore.push(semaphore);
             
         }
 
-        for i in 0..Self::MAX_FRAMES_IN_FLIGHT {
+        for _ in 0..Self::MAX_FRAMES_IN_FLIGHT {
 
             let fence = unsafe { device.create_fence(&fence_info, None).expect("Fence Creation Failed !") };
             in_flight_fence.push(fence);
@@ -832,11 +614,6 @@ impl VulkanRenderer {
         let render_pass = Self::create_render_pass(&self.device, self.swapchain_format);
         self.render_pass = render_pass;
 
-        // let (pipeline_layout, graphics_pipeline) = Self::create_graphics_pipeline(&self.device, self.swapchain_extent, self.descriptor_set_layout, self.render_pass);
-        // self.pipeline_layout = pipeline_layout;
-        // self.graphics_pipeline = graphics_pipeline;
-
-
         let swapchain_frame_buffers = Self::create_frame_buffers(&self.device, &self.swapchain_image_views, self.render_pass, self.swapchain_extent);
         self.swapchain_frame_buffers = swapchain_frame_buffers;
 
@@ -847,7 +624,7 @@ impl VulkanRenderer {
 
             let descriptor_sets = {
                 let descriptor_set_layout = &self.descriptor_set_layouts[self.uniform_buffers[i].shader_layout.0 as usize];
-                Self::create_descriptor_sets(&self.device, &self.swapchain_images, &self.uniform_buffers[i].buffer, &descriptor_set_layout.descriptor_set_layouts, self.descriptor_pool)
+                Self::create_descriptor_sets(&self.device, &self.swapchain_images, &self.uniform_buffers[i].buffer, self.uniform_buffers[i].size, &descriptor_set_layout.descriptor_set_layouts, self.descriptor_pool)
             };
 
             self.uniform_buffers[i].update_descriptor_sets(descriptor_sets);
@@ -1063,68 +840,6 @@ impl VulkanRenderer {
 
     }
 
-    pub fn draw_image(&mut self) {
-
-        let image_index = self.image_index;
-        // self.update_uniform_buffer(image_index as usize);
-
-    }
-
-
-    // fn update_uniform_buffer(&self, current_image: usize) {
-
-    //     let time = self.start_time.elapsed().as_secs_f32();
-
-    //     let ubo = VulkanUniformBufferObject {
-
-    //         model: Mat4::from_rotation_z(time * 90.0f32.to_radians()) * Mat4::from_rotation_y(time * 90.0f32.to_radians()) * Mat4::from_rotation_x(-time * 90.0f32.to_radians()),
-    //         // 2D
-    //         //model: Mat4::IDENTITY,
-    //         view: Mat4::look_at_rh(
-    //         Vec3::new(2.0, 2.0, 2.0),
-    //         Vec3::new(0.0, 0.0, 0.0),
-    //         Vec3::new(0.0, 0.0, 1.0)
-    //         ),
-    //         // 2D
-    //         //view: Mat4::IDENTITY,
-    //         proj: {
-
-    //             let mut proj = Mat4::perspective_rh(
-    //             45.0f32.to_radians(),
-    //             self.swapchain_extent.width as f32 / self.swapchain_extent.height as f32,
-    //             0.1,
-    //             10.0
-    //             );
-    //             // 2D
-    //             // let mut proj = Mat4::orthographic_rh(
-    //             // 0.0,
-    //             // self.swapchain_extent.width as f32,
-    //             // self.swapchain_extent.height as f32,
-    //             // 0.0,
-    //             // -1.0,
-    //             // 1.0,
-    //             // );
-    //             proj.y_axis.y *= -1.0; // à supprimer pour la 2D
-    //             proj
-
-    //         }
-
-    //     };
-
-    //     unsafe {
-    //         let data = self.device.map_memory(
-    //             self.uniform_buffers_memory[current_image],
-    //             0,
-    //             std::mem::size_of::<VulkanUniformBufferObject>() as u64,
-    //             vk::MemoryMapFlags::empty(),
-    //         ).unwrap() as *mut VulkanUniformBufferObject;
-    //         data.write(ubo);
-    //         self.device.unmap_memory(self.uniform_buffers_memory[current_image]);
-    //     }
-
-    // } 
-
-
     pub fn begin_draw(&mut self) {
 
         if self.is_paused { return; }
@@ -1233,8 +948,6 @@ impl VulkanRenderer {
 
         unsafe { self.device.cmd_begin_render_pass(buffer, &render_pass_begin_info, vk::SubpassContents::INLINE) };
 
-        // unsafe { self.device.cmd_bind_pipeline(buffer, vk::PipelineBindPoint::GRAPHICS, self.graphics_pipeline) };
-
     }
 
     fn end_command_buffer(&self, image_index: u32) {
@@ -1255,11 +968,8 @@ impl VulkanRenderer {
 
         let offsets = &[0 as u64];
 
-        // let descriptor_set = self.uniform_buffers[self.current_uniform_buffer.unwrap() as usize].descriptor_sets[self.image_index as usize];
-
         unsafe { self.device.cmd_bind_vertex_buffers(buffer, 0, &[self.vertex_buffers[vertex_buffer_handle.0 as usize].buffer], offsets) };
         unsafe { self.device.cmd_bind_index_buffer(buffer, self.index_buffers[index_buffer_handle.0 as usize].buffer, 0, vk::IndexType::UINT16) };
-        // unsafe { self.device.cmd_bind_descriptor_sets(buffer, vk::PipelineBindPoint::GRAPHICS, self.pipelines[self.current_pipeline.expect("Pipeline Not Set !").0 as usize].layout, 0, &[descriptor_set], &[]); }
 
         unsafe { self.device.cmd_draw_indexed(buffer, self.index_buffers[index_buffer_handle.0 as usize].count as u32, 1, 0, 0, 0); }
 
@@ -1376,9 +1086,10 @@ impl VulkanRenderer {
         }
 
         let descriptor_set_layout = &self.descriptor_set_layouts[shader_layout_handle.0 as usize];
-        let descriptor_sets = Self::create_descriptor_sets(&self.device, &self.swapchain_images, &uniform_buffers, &descriptor_set_layout.descriptor_set_layouts, self.descriptor_pool);
+        let descriptor_sets = Self::create_descriptor_sets(&self.device, &self.swapchain_images, &uniform_buffers, buffer_size, &descriptor_set_layout.descriptor_set_layouts, self.descriptor_pool);
 
         let uniform_buffer = VulkanUniformBuffer {
+            size: buffer_size,
             shader_layout: shader_layout_handle,
             buffer: uniform_buffers,
             buffer_memory: uniform_buffers_memory,
@@ -1542,18 +1253,9 @@ impl VulkanRenderer {
 
             for i in 0..self.swapchain_images.len() as usize {
                 self.device.destroy_semaphore(self.render_finished_semaphore[i], None);
-                // self.device.destroy_semaphore(self.image_available_semaphore[i], None);
             }
 
             self.device.destroy_descriptor_pool(self.descriptor_pool, None);
-
-            // for pipeline in &self.pipelines {
-            //     self.device.destroy_pipeline(pipeline.pipeline, None);
-            //     self.device.destroy_pipeline_layout(pipeline.layout, None);
-            // }
-            // self.pipelines.clear();
-
-            // self.device.destroy_pipeline_layout(self.pipeline_layout, None);
     
             self.device.destroy_render_pass(self.render_pass, None);
 

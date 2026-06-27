@@ -1,4 +1,4 @@
-use crate::renderer::{resource_handles::{ShaderHandle, ShaderLayoutHandle}, resources::{blend_state::BlendState, descriptor_binding::DescriptorBinding, multisampler::Multisampler, primitive_type::PrimitiveType, rasterizer::Rasterizer, scissor_config::ScissorConfig, vertex_declaration::VertexDeclaration, viewport_config::ViewportConfig}};
+use crate::renderer::{resource_handles::{ShaderHandle, ShaderLayoutHandle}, resources::{blend_state::BlendState, multisampler::Multisampler, primitive_type::PrimitiveType, rasterizer::Rasterizer, vertex_declaration::VertexDeclaration}};
 
 
 pub struct PipelineConfig {
@@ -11,10 +11,6 @@ pub struct PipelineConfig {
     pub multisampler: Multisampler,
     pub blend_state: BlendState,
     pub shader_layout_handle: ShaderLayoutHandle,
-    // pub descriptor_bindings: Vec<DescriptorBinding>,
-
-    // pub viewports: Vec<Viewport>,
-    // pub scissors: Vec<Scissor>,
 
     pub viewport_count: u32,
     pub scissor_count: u32,
@@ -33,10 +29,7 @@ impl PipelineConfig {
             rasterizer: Rasterizer::create(),
             multisampler: Multisampler::create(),
             blend_state: BlendState::create(),
-            // descriptor_bindings: Vec::new(),
             shader_layout_handle: shader_layout_handle,
-            // viewports: Vec::new(),
-            // scissors: Vec::new(),
             viewport_count: 1,
             scissor_count: 1,
         }

@@ -4,6 +4,7 @@ use crate::renderer::resource_handles::ShaderLayoutHandle;
 
 
 pub struct VulkanUniformBuffer {
+    pub size: u64,
     pub shader_layout: ShaderLayoutHandle,
     pub buffer: Vec<vk::Buffer>,
     pub buffer_memory: Vec<vk::DeviceMemory>,

@@ -35,12 +35,6 @@ impl Renderer {
         }
     }
 
-    pub fn draw_image(&mut self) {
-        match &mut self.renderer_handle {
-            RendererEnum::Vulkan(vulkan_renderer) => vulkan_renderer.draw_image(),
-        }
-    }
-
     pub fn update_surface_dimension(&mut self, surface_dimension: (u32, u32)) {
         match &mut self.renderer_handle {
             RendererEnum::Vulkan(vulkan_renderer) => vulkan_renderer.update_surface_dimension(surface_dimension),
