@@ -1,10 +1,19 @@
 
 use std::{collections::HashSet, ffi::CStr, time::Instant};
 
+use ash;
 use ash::vk;
+
 use glam::{Mat4, Vec3};
 
-use crate::{renderer::{baserenderer::BaseRenderer, resource_handles::{IndexBufferHandle, VertexBufferHandle}, resources::{base_index::BaseIndex, base_vertex::BaseVertex, vertex_declaration::VertexDeclaration, vertex_format::VertexFormat, vertex_position_color::VertexPositionColor}, vulkan::{vulkan_indexbuffer::VulkanIndexBuffer, vulkan_surface::VulkanSurface, vulkan_vertexbuffer::VulkanVertexBuffer}, vulkanuniformbufferobject::VulkanUniformBufferObject}, window::rawhandle::RawHandle};
+use crate::renderer::resource_handles::{ScissorHandle, ShaderLayoutHandle, UniformBufferHandle, ViewportHandle};
+use crate::renderer::resources::base_uniform::BaseUniform;
+use crate::renderer::resources::descriptor_binding::DescriptorBinding;
+use crate::renderer::resources::scissor_config::ScissorConfig;
+use crate::renderer::vulkan::vulkan_descriptor_set_layout::VulkanDescriptorSetLayout;
+use crate::renderer::vulkan::vulkan_uniformbuffer::VulkanUniformBuffer;
+use crate::renderer::vulkan::vulkan_utils::VulkanUtils;
+use crate::{renderer::{baserenderer::BaseRenderer, resource_handles::{IndexBufferHandle, PipelineHandle, VertexBufferHandle}, resources::{base_index::BaseIndex, base_vertex::BaseVertex, pipeline_config::PipelineConfig, shader_type::ShaderType, vertex_declaration::VertexDeclaration, vertex_format::VertexFormat, vertex_position_color::VertexPositionColor, viewport_config::ViewportConfig}, vulkan::{vulkan_indexbuffer::VulkanIndexBuffer, vulkan_pipeline::VulkanPipeline, vulkan_shader::VulkanShader, vulkan_surface::VulkanSurface, vulkan_vertexbuffer::VulkanVertexBuffer}, vulkanuniformbufferobject::VulkanUniformBufferObject}, window::rawhandle::RawHandle};
 
 
 
@@ -37,10 +46,12 @@ pub struct VulkanRenderer {
 
     render_pass: vk::RenderPass,
     
-    descriptor_set_layout: vk::DescriptorSetLayout,
-    
-    pipeline_layout: vk::PipelineLayout,
-    graphics_pipeline: vk::Pipeline,
+    // descriptor_set_layout: vk::DescriptorSetLayout,
+    // pipeline_layout: vk::PipelineLayout,
+    // graphics_pipeline: vk::Pipeline,
+
+    descriptor_set_layouts: Vec<VulkanDescriptorSetLayout>,
+    pipelines: Vec<VulkanPipeline>,
 
     swapchain_frame_buffers: Vec<vk::Framebuffer>,
 
@@ -51,9 +62,27 @@ pub struct VulkanRenderer {
     vertex_buffers: Vec<VulkanVertexBuffer>,
     index_buffers: Vec<VulkanIndexBuffer>,
 
-    uniform_buffers: Vec<vk::Buffer>,
-    uniform_buffers_memory: Vec<vk::DeviceMemory>,
-    descriptor_sets: Vec<vk::DescriptorSet>,
+    // uniform_buffers: Vec<vk::Buffer>,
+    // uniform_buffers_memory: Vec<vk::DeviceMemory>,
+    // descriptor_sets: Vec<vk::DescriptorSet>,
+
+    uniform_buffers: Vec<VulkanUniformBuffer>,
+
+    shaders: Vec<VulkanShader>,
+    viewports: Vec<vk::Viewport>,
+    scissors: Vec<vk::Rect2D>,
+
+    vertex_buffer_next_id: u32,
+    index_buffer_next_id: u32,
+    uniform_buffer_next_id: u32,
+    shader_next_id: u32,
+    viewport_next_id: u32,
+    scissor_next_id: u32,
+    descriptor_set_layout_next_id: u32,
+    pipeline_next_id: u32,
+
+    current_pipeline: Option<PipelineHandle>,
+    current_uniform_buffer: Option<u32>,
 
     acquire_semaphores: Vec<vk::Semaphore>,
     render_finished_semaphore: Vec<vk::Semaphore>,
@@ -104,16 +133,16 @@ impl BaseRenderer for VulkanRenderer {
         let (swapchain_loader, swapchain, swapchain_images, swapchain_format, swapchain_extent) = Self::create_swapchain(&instance, &surface_loader, &device, surface, physical_device, surface_dimension);
         let swapchain_image_views = Self::create_image_views(&device, &swapchain_images, swapchain_format);
         let render_pass = Self::create_render_pass(&device, swapchain_format);
-        let descriptor_set_layout = Self::create_descriptor_set_layout(&device);
-        let (pipeline_layout, graphics_pipeline) = Self::create_graphics_pipeline(&device, swapchain_extent, descriptor_set_layout, render_pass);
+        // let descriptor_set_layout = Self::create_descriptor_set_layout(&device);
+        // let (pipeline_layout, graphics_pipeline) = Self::create_graphics_pipeline(&device, swapchain_extent, descriptor_set_layout, render_pass);
         let swapchain_frame_buffers = Self::create_frame_buffers(&device, &swapchain_image_views, render_pass, swapchain_extent);
         let command_pool = Self::create_command_pool(&instance, &device, &surface_loader, surface, physical_device);
         let descriptor_pool = Self::create_descriptor_pool(&device, &swapchain_images);
         
-        let (uniform_buffers, uniform_buffers_memory) = Self::create_uniform_buffer(&instance, &device, physical_device, &swapchain_images);
-        let descriptor_sets = Self::create_descriptor_sets(&device, &swapchain_images, &uniform_buffers, descriptor_set_layout, descriptor_pool);
+        // let (uniform_buffers, uniform_buffers_memory) = Self::create_uniform_buffer(&instance, &device, physical_device, &swapchain_images);
+        // let descriptor_sets = Self::create_descriptor_sets(&device, &swapchain_images, &uniform_buffers, descriptor_set_layout, descriptor_pool);
         
-        let command_buffers = Self::create_command_buffers(&device, &swapchain_frame_buffers, command_pool, render_pass, swapchain_extent, pipeline_layout, graphics_pipeline /*, vertex_buffer, index_buffer, &descriptor_sets*/);
+        let command_buffers = Self::create_command_buffers(&device, &swapchain_frame_buffers, command_pool /*, render_pass, swapchain_extent, pipeline_layout, graphics_pipeline*/ /*, vertex_buffer, index_buffer, &descriptor_sets*/);
         let (acquire_semaphores, render_finished_semaphore, in_flight_fence, images_in_flight) = Self::create_sync_objects(&device, &swapchain_images);
 
 
@@ -141,9 +170,13 @@ impl BaseRenderer for VulkanRenderer {
             swapchain_extent,
             swapchain_image_views,
             render_pass,
-            descriptor_set_layout,
-            pipeline_layout,
-            graphics_pipeline,
+            // descriptor_set_layout,
+            // pipeline_layout,
+
+            // graphics_pipeline,
+            descriptor_set_layouts: Vec::new(),
+            pipelines: Vec::new(),
+
             swapchain_frame_buffers,
             command_pool,
             descriptor_pool,
@@ -152,9 +185,26 @@ impl BaseRenderer for VulkanRenderer {
             vertex_buffers: Vec::new(),
             index_buffers: Vec::new(),
 
-            uniform_buffers,
-            uniform_buffers_memory,
-            descriptor_sets,
+            // uniform_buffers,
+            // uniform_buffers_memory,
+            // descriptor_sets,
+            uniform_buffers: Vec::new(),
+
+            shaders: Vec::new(),
+            viewports: Vec::new(),
+            scissors: Vec::new(),
+
+            vertex_buffer_next_id: 0,
+            index_buffer_next_id: 0,
+            uniform_buffer_next_id: 0,
+            shader_next_id: 0,
+            viewport_next_id: 0,
+            scissor_next_id: 0,
+            descriptor_set_layout_next_id: 0,
+            pipeline_next_id: 0,
+
+            current_pipeline: None,
+            current_uniform_buffer: None,
 
             acquire_semaphores, 
             render_finished_semaphore,
@@ -196,7 +246,7 @@ impl VulkanRenderer {
 
         let app_info = vk::ApplicationInfo::default()
             .application_name(c"VulkanApp")
-            .api_version(vk::API_VERSION_1_3);
+            .api_version(vk::API_VERSION_1_2);
 
         let extensions = VulkanSurface::get_required_extensions(raw_handle);
 
@@ -425,23 +475,23 @@ impl VulkanRenderer {
     }
 
 
-    fn create_descriptor_set_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
+    // fn create_descriptor_set_layout(device: &ash::Device) -> vk::DescriptorSetLayout {
 
-        let ubo_layout_binding = [vk::DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX)
-            //.immutable_samplers();
-        ];
+    //     let ubo_layout_binding = [vk::DescriptorSetLayoutBinding::default()
+    //         .binding(0)
+    //         .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+    //         .descriptor_count(1)
+    //         .stage_flags(vk::ShaderStageFlags::VERTEX)
+    //         //.immutable_samplers();
+    //     ];
 
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::default()
-            .bindings(&ubo_layout_binding);
+    //     let layout_info = vk::DescriptorSetLayoutCreateInfo::default()
+    //         .bindings(&ubo_layout_binding);
 
-        let descriptor_set_layout = unsafe { device.create_descriptor_set_layout(&layout_info, None).expect("Descriptor Layout Creation Failed !") };
+    //     let descriptor_set_layout = unsafe { device.create_descriptor_set_layout(&layout_info, None).expect("Descriptor Layout Creation Failed !") };
 
-        return descriptor_set_layout;
-    }
+    //     return descriptor_set_layout;
+    // }
 
 
     fn create_graphics_pipeline(device: &ash::Device, swapchain_extent: vk::Extent2D, descriptor_set_layout: vk::DescriptorSetLayout, render_pass: vk::RenderPass) -> (vk::PipelineLayout, vk::Pipeline) {
@@ -477,8 +527,8 @@ impl VulkanRenderer {
 
         let shader_stages = [vert_shader_stage_info, frag_shader_stage_info ];
 
-        let binding_description = [Self::get_vertex_binding_descriptions(VertexPositionColor::get_vertex_declaration())];
-        let attribute_descriptions = Self::get_vertex_attribute_descriptions(VertexPositionColor::get_vertex_declaration());
+        let binding_description = [VulkanUtils::get_vertex_binding_descriptions(&VertexPositionColor::get_vertex_declaration())];
+        let attribute_descriptions = VulkanUtils::get_vertex_attribute_descriptions(&VertexPositionColor::get_vertex_declaration());
 
 
         let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default()
@@ -491,7 +541,7 @@ impl VulkanRenderer {
 
         let viewports = [vk::Viewport::default()
             .x(0.0)
-            .height(0.0)
+            .y(0.0)
             .width(swapchain_extent.width as f32)
             .height(swapchain_extent.height as f32)
             .min_depth(0.0)
@@ -557,6 +607,7 @@ impl VulkanRenderer {
         let dynamic_states= [
             vk::DynamicState::VIEWPORT,
             vk::DynamicState::LINE_WIDTH,
+            vk::DynamicState::BLEND_CONSTANTS
         ];
 
         let dynamic_state_info = vk::PipelineDynamicStateCreateInfo::default()
@@ -654,7 +705,7 @@ impl VulkanRenderer {
     }
 
 
-    fn create_command_buffers(device: &ash::Device, swapchain_frame_buffers: &Vec<vk::Framebuffer>, command_pool: vk::CommandPool, render_pass: vk::RenderPass, swapchain_extent: vk::Extent2D, pipeline_layout: vk::PipelineLayout, graphics_pipeline: vk::Pipeline, /*vertex_buffer: vk::Buffer, index_buffer: vk::Buffer, descriptor_sets: &Vec<vk::DescriptorSet>*/) -> Vec<vk::CommandBuffer> {
+    fn create_command_buffers(device: &ash::Device, swapchain_frame_buffers: &Vec<vk::Framebuffer>, command_pool: vk::CommandPool   /*, render_pass: vk::RenderPass, swapchain_extent: vk::Extent2D, pipeline_layout: vk::PipelineLayout, graphics_pipeline: vk::Pipeline,*/ /*vertex_buffer: vk::Buffer, index_buffer: vk::Buffer, descriptor_sets: &Vec<vk::DescriptorSet>*/) -> Vec<vk::CommandBuffer> {
 
         let command_buffer_allocate_info = vk::CommandBufferAllocateInfo::default()
             .command_pool(command_pool)
@@ -667,27 +718,28 @@ impl VulkanRenderer {
     }
 
 
-    fn create_uniform_buffer(instance: &ash::Instance, device: &ash::Device, physical_device: ash::vk::PhysicalDevice, swapchain_images: &Vec<vk::Image>) -> (Vec<vk::Buffer>, Vec<vk::DeviceMemory>) {
+    // fn create_uniform_buffer(instance: &ash::Instance, device: &ash::Device, physical_device: ash::vk::PhysicalDevice, swapchain_images: &Vec<vk::Image>) -> (Vec<vk::Buffer>, Vec<vk::DeviceMemory>) {
 
-        let buffer_size = std::mem::size_of::<VulkanUniformBufferObject>() as u64;
+    //     let buffer_size = std::mem::size_of::<VulkanUniformBufferObject>() as u64;
 
-        let mut uniform_buffers = Vec::<vk::Buffer>::new();
-        let mut uniform_buffers_memory = Vec::<vk::DeviceMemory>::new();
+    //     let mut uniform_buffers = Vec::<vk::Buffer>::new();
+    //     let mut uniform_buffers_memory = Vec::<vk::DeviceMemory>::new();
 
-        for i in 0..swapchain_images.len() {
+    //     for i in 0..swapchain_images.len() {
             
-            let (buffer, buffer_memory) = Self::create_buffer(instance, device, physical_device, buffer_size, vk::BufferUsageFlags::UNIFORM_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT);
+    //         let (buffer, buffer_memory) = Self::create_buffer(instance, device, physical_device, buffer_size, vk::BufferUsageFlags::UNIFORM_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT);
 
-            uniform_buffers.push(buffer);
-            uniform_buffers_memory.push(buffer_memory);
-        }
+    //         uniform_buffers.push(buffer);
+    //         uniform_buffers_memory.push(buffer_memory);
+    //     }
 
-        return (uniform_buffers, uniform_buffers_memory);
-    }
+    //     return (uniform_buffers, uniform_buffers_memory);
+    // }
 
-    fn create_descriptor_sets(device: &ash::Device, swapchain_images: &Vec<vk::Image>, uniform_buffers: &Vec<vk::Buffer>, descriptor_set_layout: vk::DescriptorSetLayout, descriptor_pool: vk::DescriptorPool) -> Vec<vk::DescriptorSet> {
+    fn create_descriptor_sets(device: &ash::Device, swapchain_images: &Vec<vk::Image>, uniform_buffers: &Vec<vk::Buffer>, descriptor_set_layout: &Vec<vk::DescriptorSetLayout>, descriptor_pool: vk::DescriptorPool) -> Vec<vk::DescriptorSet> {
 
-        let layouts = vec![descriptor_set_layout; swapchain_images.len()];
+        // On prend le descriptor_set_layout [0] pour le moment
+        let layouts = vec![descriptor_set_layout[0]; swapchain_images.len()];
 
         let allocate_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(descriptor_pool)
@@ -780,9 +832,9 @@ impl VulkanRenderer {
         let render_pass = Self::create_render_pass(&self.device, self.swapchain_format);
         self.render_pass = render_pass;
 
-        let (pipeline_layout, graphics_pipeline) = Self::create_graphics_pipeline(&self.device, self.swapchain_extent, self.descriptor_set_layout, self.render_pass);
-        self.pipeline_layout = pipeline_layout;
-        self.graphics_pipeline = graphics_pipeline;
+        // let (pipeline_layout, graphics_pipeline) = Self::create_graphics_pipeline(&self.device, self.swapchain_extent, self.descriptor_set_layout, self.render_pass);
+        // self.pipeline_layout = pipeline_layout;
+        // self.graphics_pipeline = graphics_pipeline;
 
 
         let swapchain_frame_buffers = Self::create_frame_buffers(&self.device, &self.swapchain_image_views, self.render_pass, self.swapchain_extent);
@@ -791,8 +843,16 @@ impl VulkanRenderer {
         let descriptor_pool = Self::create_descriptor_pool(&self.device, &self.swapchain_images);
         self.descriptor_pool = descriptor_pool;
 
-        let descriptor_sets = Self::create_descriptor_sets(&self.device, &self.swapchain_images, &self.uniform_buffers, self.descriptor_set_layout, self.descriptor_pool);
-        self.descriptor_sets = descriptor_sets;
+        for i in 0..self.uniform_buffers.len() {
+
+            let descriptor_sets = {
+                let descriptor_set_layout = &self.descriptor_set_layouts[self.uniform_buffers[i].shader_layout.0 as usize];
+                Self::create_descriptor_sets(&self.device, &self.swapchain_images, &self.uniform_buffers[i].buffer, &descriptor_set_layout.descriptor_set_layouts, self.descriptor_pool)
+            };
+
+            self.uniform_buffers[i].update_descriptor_sets(descriptor_sets);
+
+        }
 
         let (acquire_semaphores, render_finished_semaphore, in_flight_fence, images_in_flight) = Self::create_sync_objects(&self.device, &self.swapchain_images);
         self.acquire_semaphores = acquire_semaphores;
@@ -1006,63 +1066,63 @@ impl VulkanRenderer {
     pub fn draw_image(&mut self) {
 
         let image_index = self.image_index;
-        self.update_uniform_buffer(image_index as usize);
+        // self.update_uniform_buffer(image_index as usize);
 
     }
 
 
-    fn update_uniform_buffer(&self, current_image: usize) {
+    // fn update_uniform_buffer(&self, current_image: usize) {
 
-        let time = self.start_time.elapsed().as_secs_f32();
+    //     let time = self.start_time.elapsed().as_secs_f32();
 
-        let ubo = VulkanUniformBufferObject {
+    //     let ubo = VulkanUniformBufferObject {
 
-            model: Mat4::from_rotation_z(time * 90.0f32.to_radians()) * Mat4::from_rotation_y(time * 90.0f32.to_radians()) * Mat4::from_rotation_x(-time * 90.0f32.to_radians()),
-            // 2D
-            //model: Mat4::IDENTITY,
-            view: Mat4::look_at_rh(
-            Vec3::new(2.0, 2.0, 2.0),
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(0.0, 0.0, 1.0)
-            ),
-            // 2D
-            //view: Mat4::IDENTITY,
-            proj: {
+    //         model: Mat4::from_rotation_z(time * 90.0f32.to_radians()) * Mat4::from_rotation_y(time * 90.0f32.to_radians()) * Mat4::from_rotation_x(-time * 90.0f32.to_radians()),
+    //         // 2D
+    //         //model: Mat4::IDENTITY,
+    //         view: Mat4::look_at_rh(
+    //         Vec3::new(2.0, 2.0, 2.0),
+    //         Vec3::new(0.0, 0.0, 0.0),
+    //         Vec3::new(0.0, 0.0, 1.0)
+    //         ),
+    //         // 2D
+    //         //view: Mat4::IDENTITY,
+    //         proj: {
 
-                let mut proj = Mat4::perspective_rh(
-                45.0f32.to_radians(),
-                self.swapchain_extent.width as f32 / self.swapchain_extent.height as f32,
-                0.1,
-                10.0
-                );
-                // 2D
-                // let mut proj = Mat4::orthographic_rh(
-                // 0.0,
-                // self.swapchain_extent.width as f32,
-                // self.swapchain_extent.height as f32,
-                // 0.0,
-                // -1.0,
-                // 1.0,
-                // );
-                proj.y_axis.y *= -1.0; // à supprimer pour la 2D
-                proj
+    //             let mut proj = Mat4::perspective_rh(
+    //             45.0f32.to_radians(),
+    //             self.swapchain_extent.width as f32 / self.swapchain_extent.height as f32,
+    //             0.1,
+    //             10.0
+    //             );
+    //             // 2D
+    //             // let mut proj = Mat4::orthographic_rh(
+    //             // 0.0,
+    //             // self.swapchain_extent.width as f32,
+    //             // self.swapchain_extent.height as f32,
+    //             // 0.0,
+    //             // -1.0,
+    //             // 1.0,
+    //             // );
+    //             proj.y_axis.y *= -1.0; // à supprimer pour la 2D
+    //             proj
 
-            }
+    //         }
 
-        };
+    //     };
 
-        unsafe {
-            let data = self.device.map_memory(
-                self.uniform_buffers_memory[current_image],
-                0,
-                std::mem::size_of::<VulkanUniformBufferObject>() as u64,
-                vk::MemoryMapFlags::empty(),
-            ).unwrap() as *mut VulkanUniformBufferObject;
-            data.write(ubo);
-            self.device.unmap_memory(self.uniform_buffers_memory[current_image]);
-        }
+    //     unsafe {
+    //         let data = self.device.map_memory(
+    //             self.uniform_buffers_memory[current_image],
+    //             0,
+    //             std::mem::size_of::<VulkanUniformBufferObject>() as u64,
+    //             vk::MemoryMapFlags::empty(),
+    //         ).unwrap() as *mut VulkanUniformBufferObject;
+    //         data.write(ubo);
+    //         self.device.unmap_memory(self.uniform_buffers_memory[current_image]);
+    //     }
 
-    } 
+    // } 
 
 
     pub fn begin_draw(&mut self) {
@@ -1173,7 +1233,7 @@ impl VulkanRenderer {
 
         unsafe { self.device.cmd_begin_render_pass(buffer, &render_pass_begin_info, vk::SubpassContents::INLINE) };
 
-        unsafe { self.device.cmd_bind_pipeline(buffer, vk::PipelineBindPoint::GRAPHICS, self.graphics_pipeline) };
+        // unsafe { self.device.cmd_bind_pipeline(buffer, vk::PipelineBindPoint::GRAPHICS, self.graphics_pipeline) };
 
     }
 
@@ -1195,50 +1255,14 @@ impl VulkanRenderer {
 
         let offsets = &[0 as u64];
 
+        // let descriptor_set = self.uniform_buffers[self.current_uniform_buffer.unwrap() as usize].descriptor_sets[self.image_index as usize];
+
         unsafe { self.device.cmd_bind_vertex_buffers(buffer, 0, &[self.vertex_buffers[vertex_buffer_handle.0 as usize].buffer], offsets) };
         unsafe { self.device.cmd_bind_index_buffer(buffer, self.index_buffers[index_buffer_handle.0 as usize].buffer, 0, vk::IndexType::UINT16) };
-        unsafe { self.device.cmd_bind_descriptor_sets(buffer, vk::PipelineBindPoint::GRAPHICS, self.pipeline_layout, 0, &[self.descriptor_sets[self.image_index as usize]], &[]); }
+        // unsafe { self.device.cmd_bind_descriptor_sets(buffer, vk::PipelineBindPoint::GRAPHICS, self.pipelines[self.current_pipeline.expect("Pipeline Not Set !").0 as usize].layout, 0, &[descriptor_set], &[]); }
 
         unsafe { self.device.cmd_draw_indexed(buffer, self.index_buffers[index_buffer_handle.0 as usize].count as u32, 1, 0, 0, 0); }
 
-    }
-
-
-    fn get_vertex_binding_descriptions(declararion: VertexDeclaration) -> vk::VertexInputBindingDescription {
-
-        vk::VertexInputBindingDescription::default()
-            .binding(0)
-            .stride(declararion.stride)
-            .input_rate(vk::VertexInputRate::VERTEX)
-
-    }
-
-    fn get_vertex_attribute_descriptions(declaration: VertexDeclaration) -> Vec<vk::VertexInputAttributeDescription> {
-
-        let mut attributes: Vec<vk::VertexInputAttributeDescription> = Vec::new();
-
-        for e in declaration.attributes {
-            
-            let attr = vk::VertexInputAttributeDescription::default()
-                .binding(0)
-                .location(e.location)
-                .format(Self::vertex_format_to_vk_format(e.format))
-                .offset(e.offset);
-
-            attributes.push(attr);
-        }
-
-        return attributes;
-    }
-
-
-    fn vertex_format_to_vk_format(format: VertexFormat) -> vk::Format {
-        match format {
-            VertexFormat::Float2 => vk::Format::R32G32_SFLOAT,
-            VertexFormat::Float3 => vk::Format::R32G32B32_SFLOAT,
-            VertexFormat::Float4 => vk::Format::R32G32B32A32_SFLOAT,
-            _ => panic!("Vertex Format not exist !"),
-        }
     }
 
 
@@ -1254,8 +1278,10 @@ impl VulkanRenderer {
             buffer_memory: vertex_buffer_memory
         };
         
-        let id = self.vertex_buffers.len() as u32;
         self.vertex_buffers.push(vertex_buffer);
+
+        let id = self.vertex_buffer_next_id;
+        self.vertex_buffer_next_id += 1;
 
         return id;
     }
@@ -1299,8 +1325,10 @@ impl VulkanRenderer {
             buffer_memory: index_buffer_memory
         };
         
-        let id = self.index_buffers.len() as u32;
         self.index_buffers.push(index_buffer);
+
+        let id = self.index_buffer_next_id;
+        self.index_buffer_next_id += 1;
 
         return id;
     }
@@ -1331,13 +1359,179 @@ impl VulkanRenderer {
 
     }
 
+
+    pub fn create_uniform_buffer<U: BaseUniform>(&mut self, shader_layout_handle: ShaderLayoutHandle) -> u32 {
+
+        let buffer_size = std::mem::size_of::<U>() as u64;
+
+        let mut uniform_buffers = Vec::<vk::Buffer>::new();
+        let mut uniform_buffers_memory = Vec::<vk::DeviceMemory>::new();
+
+        for _ in 0..self.swapchain_images.len() {
+            
+            let (buffer, buffer_memory) = Self::create_buffer(&self.instance, &self.device, self.physical_device, buffer_size, vk::BufferUsageFlags::UNIFORM_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT);
+
+            uniform_buffers.push(buffer);
+            uniform_buffers_memory.push(buffer_memory);
+        }
+
+        let descriptor_set_layout = &self.descriptor_set_layouts[shader_layout_handle.0 as usize];
+        let descriptor_sets = Self::create_descriptor_sets(&self.device, &self.swapchain_images, &uniform_buffers, &descriptor_set_layout.descriptor_set_layouts, self.descriptor_pool);
+
+        let uniform_buffer = VulkanUniformBuffer {
+            shader_layout: shader_layout_handle,
+            buffer: uniform_buffers,
+            buffer_memory: uniform_buffers_memory,
+            descriptor_sets: descriptor_sets,
+        };
+
+        self.uniform_buffers.push(uniform_buffer);
+
+        let id = self.uniform_buffer_next_id;
+        self.uniform_buffer_next_id += 1;
+
+        return id;
+    }
+
+    pub fn set_uniform_buffer_data<U: BaseUniform>(&mut self, uniform: U, handle: UniformBufferHandle<U>) {
+
+        unsafe {
+            let data = self.device.map_memory(
+                self.uniform_buffers[handle.0 as usize].buffer_memory[self.current_frame as usize],
+                0,
+                std::mem::size_of::<U>() as u64,
+                vk::MemoryMapFlags::empty(),
+            ).unwrap() as *mut U;
+            data.write(uniform);
+            self.device.unmap_memory(self.uniform_buffers[handle.0 as usize].buffer_memory[self.current_frame as usize]);
+        }
+
+    }
+
+    pub fn create_shader(&mut self, path: &str, shader_type: ShaderType) -> u32 {
+
+        let shader = VulkanShader::create(path, VulkanUtils::shader_type_to_vk_shader_stage(shader_type), &self.device);
+        self.shaders.push(shader);
+
+        let id = self.shader_next_id;
+        self.shader_next_id += 1;
+
+        return id;
+    }
+
+    pub fn create_viewport(&mut self, config: ViewportConfig) -> u32 {
+
+        let viewport = vk::Viewport::default()
+            .x(config.x)
+            .y(config.y)
+            .width(config.width)
+            .height(config.height)
+            .min_depth(config.min_depth)
+            .max_depth(config.max_depth);
+
+        self.viewports.push(viewport);
+
+        let id = self.viewport_next_id;
+        self.viewport_next_id += 1;
+
+        return id;
+    }
+
+    pub fn create_scissor(&mut self, config: ScissorConfig) -> u32 {
+
+        let scissor = vk::Rect2D::default()
+            .offset(vk::Offset2D::default().x(config.x).y(config.y))
+            .extent(vk::Extent2D::default().width(config.width).height(config.height));
+
+        self.scissors.push(scissor);
+
+        let id = self.scissor_next_id;
+        self.scissor_next_id += 1;
+
+        return id;
+    }
+
+    pub fn create_descriptor_set_layout(&mut self, bindings: Vec<DescriptorBinding>) -> u32 {
+
+        let descriptor_set_layout = VulkanDescriptorSetLayout::create(&self.device, bindings);
+
+        self.descriptor_set_layouts.push(descriptor_set_layout);
+
+        let id = self.descriptor_set_layout_next_id;
+        self.descriptor_set_layout_next_id += 1;
+
+        return id;
+    }
+
+    pub fn create_pipeline(&mut self, pipeline_config: PipelineConfig) -> u32 {
+
+        let mut shaders: Vec<&VulkanShader> = Vec::new();
+        for handle in &pipeline_config.shaders {
+            shaders.push(&self.shaders[handle.0 as usize]);
+        }
+
+        let descriptor_set_layout = &self.descriptor_set_layouts[pipeline_config.shader_layout_handle.0 as usize];
+
+        let pipeline = VulkanPipeline::create(&self.device, self.render_pass, &shaders, descriptor_set_layout, pipeline_config);
+        self.pipelines.push(pipeline);
+
+        let id = self.pipeline_next_id;
+        self.pipeline_next_id += 1;
+
+        return id;
+    }
+
+    pub fn set_pipeline(&mut self, pipeline_handle: PipelineHandle) {
+
+        if self.is_paused { return; }
+        if !self.is_swapchain_valid { return; }
+
+        let buffer = self.command_buffers[self.image_index as usize];
+        unsafe { self.device.cmd_bind_pipeline(buffer, vk::PipelineBindPoint::GRAPHICS, self.pipelines[pipeline_handle.0 as usize].pipeline) };
+        self.current_pipeline = Some(pipeline_handle);
+
+    }
+
+    pub fn set_uniform_buffer<U: BaseUniform>(&mut self, uniform_buffer: UniformBufferHandle<U>) {
+
+        if self.is_paused { return; }
+        if !self.is_swapchain_valid { return; }
+
+        let descriptor_set = self.uniform_buffers[uniform_buffer.0 as usize].descriptor_sets[self.image_index as usize];
+
+        let buffer = self.command_buffers[self.image_index as usize];
+        unsafe { self.device.cmd_bind_descriptor_sets(buffer, vk::PipelineBindPoint::GRAPHICS, self.pipelines[self.current_pipeline.expect("Pipeline Not Set !").0 as usize].layout, 0, &[descriptor_set], &[]); }
+        self.current_uniform_buffer = Some(uniform_buffer.0);
+
+    }
+
+    pub fn set_viewport(&mut self, viewport: ViewportHandle) {
+
+        if self.is_paused { return; }
+        if !self.is_swapchain_valid { return; }
+
+        let buffer = self.command_buffers[self.image_index as usize];
+        unsafe { self.device.cmd_set_viewport(buffer, 0, &[self.viewports[viewport.0 as usize]]) };
+
+    }
+
+    pub fn set_scissor(&mut self, scissor: ScissorHandle) {
+
+        if self.is_paused { return; }
+        if !self.is_swapchain_valid { return; }
+
+        let buffer = self.command_buffers[self.image_index as usize];
+        unsafe { self.device.cmd_set_scissor(buffer, 0, &[self.scissors[scissor.0 as usize]]) };
+
+    }
+
 }
 
 
 /// Destroy
 impl VulkanRenderer {
 
-    fn destroy_swapchain(&self) {
+    fn destroy_swapchain(&mut self) {
 
         unsafe {
 
@@ -1353,8 +1547,13 @@ impl VulkanRenderer {
 
             self.device.destroy_descriptor_pool(self.descriptor_pool, None);
 
-            self.device.destroy_pipeline(self.graphics_pipeline, None);
-            self.device.destroy_pipeline_layout(self.pipeline_layout, None);
+            // for pipeline in &self.pipelines {
+            //     self.device.destroy_pipeline(pipeline.pipeline, None);
+            //     self.device.destroy_pipeline_layout(pipeline.layout, None);
+            // }
+            // self.pipelines.clear();
+
+            // self.device.destroy_pipeline_layout(self.pipeline_layout, None);
     
             self.device.destroy_render_pass(self.render_pass, None);
 
@@ -1381,27 +1580,37 @@ impl Drop for VulkanRenderer {
 
             self.device.device_wait_idle().expect("Wait Idle Failed !");
 
-            for i in 0..self.uniform_buffers_memory.len() {
-                self.device.destroy_buffer(self.uniform_buffers[i], None);
-                self.device.free_memory(self.uniform_buffers_memory[i], None);
+            for uniform_buffer in &mut self.uniform_buffers {
+                uniform_buffer.destroy(&self.device);
             }
-            
+            self.uniform_buffers.clear();
 
-            for index_buffer in &self.index_buffers {
-                self.device.destroy_buffer(index_buffer.buffer, None);
-                self.device.free_memory(index_buffer.buffer_memory, None);
+            for index_buffer in &mut self.index_buffers {
+                index_buffer.destroy(&self.device);
             }
             self.index_buffers.clear();
 
-            for vertex_buffer in &self.vertex_buffers {
-                self.device.destroy_buffer(vertex_buffer.buffer, None);
-                self.device.free_memory(vertex_buffer.buffer_memory, None);
+            for vertex_buffer in &mut self.vertex_buffers {
+                vertex_buffer.destroy(&self.device);
             }
             self.vertex_buffers.clear();
 
-            self.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            for descriptor_set_layout in &mut self.descriptor_set_layouts {
+                descriptor_set_layout.destroy(&self.device);
+            }
+            self.descriptor_set_layouts.clear();
 
             self.device.destroy_command_pool(self.command_pool, None);
+
+
+            for pipeline in &mut self.pipelines {
+                pipeline.destroy(&self.device);
+            }
+
+            for shader in &mut self.shaders {
+                shader.destroy(&self.device);
+            }
+
 
             self.destroy_swapchain();
 

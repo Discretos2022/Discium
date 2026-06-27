@@ -3,8 +3,6 @@ pub mod vulkan;
 pub mod resources;
 
 pub mod baserenderer;
-pub mod vulkanvertex;
-pub mod vulkanuniformbufferobject;
 pub mod renderer_enum;
 pub mod renderer;
 pub mod renderer_type;

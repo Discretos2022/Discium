@@ -1,4 +1,4 @@
-use crate::{renderer::{baserenderer::BaseRenderer, renderer_enum::RendererEnum, renderer_factory::RendererFactory, renderer_type::RendererType, resource_handles::{IndexBufferHandle, VertexBufferHandle}, resources::{base_vertex::BaseVertex, base_index::BaseIndex}}, window::rawhandle::RawHandle};
+use crate::{renderer::{baserenderer::BaseRenderer, renderer_enum::RendererEnum, renderer_factory::RendererFactory, renderer_type::RendererType, resource_handles::*, resources::{base_index::BaseIndex, base_uniform::BaseUniform, base_vertex::BaseVertex, descriptor_binding::DescriptorBinding, pipeline_config::PipelineConfig, scissor_config::ScissorConfig, shader_type::ShaderType, viewport_config::ViewportConfig}}, window::rawhandle::RawHandle};
 
 
 
@@ -100,6 +100,114 @@ impl Renderer {
             },
         }
         
+    }
+
+    pub fn create_uniform_buffer<U: BaseUniform>(&mut self, shader_layout_handle: ShaderLayoutHandle) -> UniformBufferHandle<U> {
+
+        let id: u32 = match &mut self.renderer_handle {
+            RendererEnum::Vulkan(vulkan_renderer) => {
+                vulkan_renderer.create_uniform_buffer::<U>(shader_layout_handle)
+            },
+        };
+
+        return UniformBufferHandle::new(id);
+    }
+
+    pub fn set_uniform_buffer_data<U: BaseUniform>(&mut self, handle: UniformBufferHandle<U>, uniform: U) {
+
+        match &mut self.renderer_handle {
+            RendererEnum::Vulkan(vulkan_renderer) => {
+                vulkan_renderer.set_uniform_buffer_data(uniform, handle);
+            },
+        }
+        
+    }
+
+    pub fn create_shader(&mut self, path: &str, shader_type: ShaderType) -> ShaderHandle {
+
+        let id: u32 = match &mut self.renderer_handle {
+            RendererEnum::Vulkan(vulkan_renderer) => {
+                vulkan_renderer.create_shader(path, shader_type)
+            },
+        };
+        
+        return ShaderHandle(id);
+    }
+
+    pub fn create_viewport(&mut self, viewport_config: ViewportConfig) -> ViewportHandle {
+
+        let id: u32 = match &mut self.renderer_handle {
+            RendererEnum::Vulkan(vulkan_renderer) => {
+                vulkan_renderer.create_viewport(viewport_config)
+            },
+        };
+        
+        return ViewportHandle(id);
+    }
+
+    pub fn create_scissor(&mut self, scissor_config: ScissorConfig) -> ScissorHandle {
+
+        let id: u32 = match &mut self.renderer_handle {
+            RendererEnum::Vulkan(vulkan_renderer) => {
+                vulkan_renderer.create_scissor(scissor_config)
+            },
+        };
+        
+        return ScissorHandle(id);
+    }
+
+    pub fn create_shader_layout(&mut self, descriptor_bindings: Vec<DescriptorBinding>) -> ShaderLayoutHandle {
+
+        let id: u32 = match &mut self.renderer_handle {
+            RendererEnum::Vulkan(vulkan_renderer) => {
+                vulkan_renderer.create_descriptor_set_layout(descriptor_bindings)
+            },
+        };
+
+        return ShaderLayoutHandle(id);
+    }
+
+    pub fn create_pipeline(&mut self, pipeline_config: PipelineConfig) -> PipelineHandle {
+
+        let id: u32 = match &mut self.renderer_handle {
+            RendererEnum::Vulkan(vulkan_renderer) => {
+                vulkan_renderer.create_pipeline(pipeline_config)
+            },
+        };
+
+        return PipelineHandle(id);
+    }
+
+    pub fn set_pipeline(&mut self, pipeline: PipelineHandle) {
+        match &mut self.renderer_handle {
+            RendererEnum::Vulkan(vulkan_renderer) => {
+                vulkan_renderer.set_pipeline(pipeline)
+            },
+        };
+    }
+
+    pub fn set_uniform_buffer<U: BaseUniform>(&mut self, uniform_buffer: UniformBufferHandle<U>) {
+        match &mut self.renderer_handle {
+            RendererEnum::Vulkan(vulkan_renderer) => {
+                vulkan_renderer.set_uniform_buffer(uniform_buffer)
+            },
+        };
+    }
+
+    pub fn set_viewport(&mut self, viewport: ViewportHandle) {
+        match &mut self.renderer_handle {
+            RendererEnum::Vulkan(vulkan_renderer) => {
+                vulkan_renderer.set_viewport(viewport)
+            },
+        };
+    }
+
+    pub fn set_scissor(&mut self, scissor: ScissorHandle) {
+        match &mut self.renderer_handle {
+            RendererEnum::Vulkan(vulkan_renderer) => {
+                vulkan_renderer.set_scissor(scissor)
+            },
+        };
     }
 
 }
